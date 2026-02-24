@@ -50,6 +50,14 @@ A web app using Flask that can run on a support PC and allow users to visualize 
    ```
 Copy and paste the http://XXX.X.X.X:XXXX into the web browser on the support PC and it should allow you to interactively browse screening and data collection sessions
 
+_The folders queried must be the full EPU-generated folders containing all metadata_
+
+Note 1: You could definitely combine integrate epustats.py into generate_report.py, it is kept separate only because of our transfer workflow
+
+Note 2: generate_report.py should be able to automatically find the atlas images if the directory is located within the screening/collection directory or the directory containing it. However you can provide the path to the directory containing the atlas images if it is located elsewhere. If there are no atlas images, the report will still generate but will skip showing atlas images. This version of the script does not find atlas images for non-Tundra data sets but could be easily modified to do so. 
+
+_These scripts were generated with the assistance of GPT4DFCI, a private, HIPAA-secure endpoint to GPT-4o provided by DFCI_
+
 # Example Screenshots
 <img width="607" height="342" alt="screenshot1" src="https://github.com/user-attachments/assets/55dc7a57-a4cc-49b3-b28e-df1134f49688" />
 <img width="935" height="914" alt="screenshot2" src="https://github.com/user-attachments/assets/77588eaa-66b7-47a9-9660-0ff1365b3ebd" />
