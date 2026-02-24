@@ -14,6 +14,7 @@ A web app using Flask that can run on a support PC and allow users to visualize 
 6. Modify app.py as needed
       - The code assumes that your screening and collection data are mounted at /mnt/z on the support PC. If this is not the case, modify the two locations in app.py that specify /mnt/z as the base root.
 7. Modify epu/epustats.py as needed
+
       - First, change
       ```python
       MICROSCOPE_INFO = {
@@ -23,11 +24,13 @@ A web app using Flask that can run on a support PC and allow users to visualize 
       }
       ```
       to contain your serial number in the XXX spot and the correct spherical aberration in mm for your microscope. Note that the Tundra has a hyphen after it whereas the Titan does not. 
+
       - Next, if you will be using this script with a Tundra, modify the instances of
       ```python
       if instrument_model == "TUNDRA-XXX":
       ```
       to contain your serial number in the XXX spot. 
+
       - Lastly, depending on your image format, you may have to modify this snippet to change the extension:
       ```python
       if instrument_model == "TUNDRA-XXX":
@@ -46,3 +49,10 @@ A web app using Flask that can run on a support PC and allow users to visualize 
    python app.py
    ```
 Copy and paste the http://XXX.X.X.X:XXXX into the web browser on the support PC and it should allow you to interactively browse screening and data collection sessions
+
+# Example Screenshots
+<img width="607" height="342" alt="screenshot1" src="https://github.com/user-attachments/assets/55dc7a57-a4cc-49b3-b28e-df1134f49688" />
+<img width="935" height="914" alt="screenshot2" src="https://github.com/user-attachments/assets/77588eaa-66b7-47a9-9660-0ff1365b3ebd" />
+<img width="894" height="982" alt="screenshot3" src="https://github.com/user-attachments/assets/0215886f-1f5c-444a-b086-80c85c81ea68" />
+<img width="839" height="528" alt="screenshot4" src="https://github.com/user-attachments/assets/94e268b3-62f6-4325-9477-ee4f70851015" />
+<img width="1457" height="713" alt="screenshot5" src="https://github.com/user-attachments/assets/23dacb19-880d-48a7-8bdd-9e09681a9a5d" />
