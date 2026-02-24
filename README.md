@@ -11,8 +11,33 @@ A web app using Flask that can run on a support PC and allow users to visualize 
    ```bash
    conda activate screening_vis
    ```
-6. The code assumes that your screening and collection data are mounted at /mnt/z on the support PC. If this is not the case, modify the two locations in app.py that specify /mnt/z as the base root.
-7. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root. There is an example file in the code here that you can modify.
+6. Modify app.py as needed
+      - The code assumes that your screening and collection data are mounted at /mnt/z on the support PC. If this is not the case, modify the two locations in app.py that specify /mnt/z as the base root.
+7. Modify epu/epustats.py as needed
+      - First, change
+      ```python
+      MICROSCOPE_INFO = {
+         "TUNDRA-XXX": ("DFCI Tundra", 1.6),
+         "TITANXXX": ("HMS Krios2", 2.7),
+         "TITANXXX": ("HMS Krios1", 2.7),
+      }
+      ```
+      to contain your serial number in the XXX spot and the correct spherical aberration in mm for your microscope. Note that the Tundra has a hyphen after it whereas the Titan does not. 
+      - Next, if you will be using this script with a Tundra, modify the instances of
+      ```python
+      if instrument_model == "TUNDRA-XXX":
+      ```
+      to contain your serial number in the XXX spot. 
+      - Lastly, depending on your image format, you may have to modify this snippet to change the extension:
+      ```python
+      if instrument_model == "TUNDRA-XXX":
+         fractions_ext = "mrc"
+         pattern = "*Fractions.mrc"
+      else:
+         fractions_ext = "tiff"
+         pattern = "*Fractions.tiff"
+      ```        
+8. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root. There is an example file provided here that you can modify. You can omit the beam size column for non-Tundra microscopes.
 
 # Running the Script
   ```bash
