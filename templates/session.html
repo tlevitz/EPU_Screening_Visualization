@@ -1,0 +1,330 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Session {{ display_name }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 1rem; }
+    h1, h2, h3, h4 { margin: 0.5rem 0; }
+
+    /* Summary table */
+    table.summary { border-collapse: collapse; width: 100%; max-width: 900px; }
+    table.summary td {
+      border: 1px solid #ccc;
+      padding: 2px 6px;
+      vertical-align: top;
+      font-size: 13px;
+    }
+    table.summary td:first-child { width: 40%; font-weight: bold; }
+
+    /* Notes */
+    .notes { max-width: 900px; }
+
+    /* Thumbnails */
+    .thumb { max-width: 300px; cursor: pointer; border: 0px solid #ccc; display: inline-block; }
+    .atlas-img { max-width: 880px; max-height: 440px; }
+    .gs-thumb { max-width: 1000px; max-height: 440px; }
+
+    .section { margin-top: 1rem; }
+    .no-img { color: #666; font-size: 0.9rem; }
+    .loading { color: #999; font-style: italic; }
+
+    /* GridSquare / FoilHole layout */
+    .gs-block { margin-top: 1rem; }
+    .gs-image { margin-bottom: 0.5rem; }
+    .fh-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .fh-card {
+      border: 0px solid #ccc;
+      padding: 4px;
+      width: 20%;
+      min-width: 100px;
+      box-sizing: border-box;
+      font-size: 20px;
+    }
+    .fh-card-title { font-weight: bold; margin-bottom: 0.25rem; }
+
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0,0,0,0.75);
+      z-index: 1000;
+    }
+    .modal-content {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      max-width: 90vw; max-height: 90vh;
+      box-sizing: border-box;
+    }
+    .modal-content img {
+      max-width: 100vw;
+      max-height: 100vh;
+      display: block;
+    }
+    .close-btn {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      background: #fff;
+      padding: 0.3rem 0.6rem;
+      border-radius: 3px;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      font-size: 13px;
+    }
+    body.modal-open { overflow: hidden; }
+  </style>
+</head>
+<body>
+  <h1>{{ display_name }}</h1>
+
+  <!-- Summary -->
+  <div class="section" id="summary-section">
+    <h2>Summary</h2>
+    <div id="summary-loading" class="loading">Loading summary...</div>
+    <table class="summary" id="summary-table" style="display:none;">
+      <tbody id="summary-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Notes -->
+  <div class="section notes" id="notes-section" style="display:none;">
+    <h3>Notes</h3>
+    <ul id="notes-list"></ul>
+  </div>
+
+  <!-- Atlas -->
+  <div class="section">
+    <h2>Atlas</h2>
+    <div>
+      <span id="atlas-loading" class="loading">Loading atlas...</span>
+      <img id="atlas-img"
+           class="thumb atlas-img"
+           src=""
+           alt="Atlas"
+           style="display:none;"
+           onclick="openModal(this.src)">
+    </div>
+  </div>
+
+  <!-- Template Definition -->
+  <div class="section">
+    <h2>Template Definition</h2>
+    <div>
+      <span id="template-loading" class="loading">Loading template...</span>
+      <img id="template-img"
+           class="thumb atlas-img"
+           src=""
+           alt="Template"
+           style="display:none;"
+           onclick="openModal(this.src)">
+    </div>
+  </div>
+
+  <!-- Grid Squares -->
+  <div class="section" id="gs-section">
+    <h2>Grid Squares</h2>
+    <div id="gs-loading" class="loading">Loading grid squares...</div>
+    <div id="gs-container"></div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-backdrop" id="modal">
+    <div class="modal-content">
+      <img id="modal-img" src="" alt="Full image">
+      <div class="close-btn" onclick="closeModal()">x</div>
+    </div>
+  </div>
+
+  <script>
+    const sessionId = "{{ session_id }}";
+
+    function openModal(src) {
+      const m = document.getElementById('modal');
+      const img = document.getElementById('modal-img');
+      img.src = src;
+      m.style.display = 'block';
+      document.body.classList.add('modal-open');
+    }
+    function closeModal() {
+      const m = document.getElementById('modal');
+      m.style.display = 'none';
+      document.body.classList.remove('modal-open');
+      document.getElementById('modal-img').src = '';
+    }
+    document.getElementById('modal').addEventListener('click', function(e) {
+      if (e.target === this) closeModal();
+    });
+
+    // Load summary + notes
+    fetch(`/session/${sessionId}/summary.json?ts=${Date.now()}`)
+      .then(r => r.json())
+      .then(data => {
+        const tbody = document.getElementById('summary-body');
+        tbody.innerHTML = "";
+        for (const [key, value] of data.summary_rows) {
+          const tr = document.createElement('tr');
+          const tdKey = document.createElement('td');
+          const tdVal = document.createElement('td');
+          tdKey.textContent = key;
+          tdVal.textContent = value;
+          tr.appendChild(tdKey);
+          tr.appendChild(tdVal);
+          tbody.appendChild(tr);
+        }
+        document.getElementById('summary-loading').style.display = 'none';
+        document.getElementById('summary-table').style.display = '';
+
+        if (data.notes && data.notes.length) {
+          const ul = document.getElementById('notes-list');
+          ul.innerHTML = "";
+          for (const note of data.notes) {
+            const li = document.createElement('li');
+            li.textContent = note;
+            ul.appendChild(li);
+          }
+          document.getElementById('notes-section').style.display = '';
+        }
+      })
+      .catch(err => {
+        document.getElementById('summary-loading').textContent = 'Error loading summary.';
+        console.error(err);
+      });
+
+    // Load atlas image
+    const atlasImg = document.getElementById('atlas-img');
+    atlasImg.onload = function() {
+      document.getElementById('atlas-loading').style.display = 'none';
+      atlasImg.style.display = '';
+    };
+    atlasImg.onerror = function() {
+      document.getElementById('atlas-loading').textContent = 'No atlas image available.';
+    };
+    atlasImg.src = `/session/${sessionId}/atlas?ts=${Date.now()}`;
+
+
+    // Load template image
+    const templateImg = document.getElementById('template-img');
+    templateImg.onload = function() {
+      document.getElementById('template-loading').style.display = 'none';
+      templateImg.style.display = '';
+    };
+    templateImg.onerror = function() {
+      document.getElementById('template-loading').textContent = 'No template image available.';
+    };
+    templateImg.src = `/session/${sessionId}/template?ts=${Date.now()}`;
+
+    // Load grid squares
+    fetch(`/session/${sessionId}/nodes.json?ts=${Date.now()}`)
+      .then(r => r.json())
+      .then(data => {
+        const container = document.getElementById('gs-container');
+        container.innerHTML = "";
+        for (const gs of data.nodes) {
+          const block = document.createElement('div');
+          block.className = 'gs-block';
+
+          const h2 = document.createElement('h2');
+          if (gs.index && gs.epu) {
+            h2.textContent = `Grid Square ${gs.index} (EPU ${gs.epu})`;
+          } else if (gs.index) {
+            h2.textContent = `Grid Square ${gs.index}`;
+          } else {
+            h2.textContent = gs.name;
+          }
+          block.appendChild(h2);
+
+          // GridSquare image
+          const gsImageDiv = document.createElement('div');
+          gsImageDiv.className = 'gs-image';
+          if (gs.index) {
+            const img = document.createElement('img');
+            img.className = 'thumb gs-thumb';
+            img.src = `/session/${sessionId}/gridsquare/${gs.index}?ts=${Date.now()}`;
+            img.loading = 'lazy';
+            img.alt = `GridSquare ${gs.index}`;
+            img.onclick = () => openModal(img.src);
+            gsImageDiv.appendChild(img);
+          } else {
+            const no = document.createElement('div');
+            no.className = 'no-img';
+            no.textContent = 'No GridSquare index available.';
+            gsImageDiv.appendChild(no);
+          }
+          block.appendChild(gsImageDiv);
+
+          // Foil holes
+          if (gs.children && gs.children.length) {
+            const fhGrid = document.createElement('div');
+            fhGrid.className = 'fh-grid';
+
+            for (const ch of gs.children) {
+              const card = document.createElement('div');
+              card.className = 'fh-card';
+
+              const title = document.createElement('div');
+              title.className = 'fh-card-title';
+              if (ch.index) {
+                title.textContent = `Foil Hole ${ch.index} (EPU ${ch.key})`;
+              } else {
+                title.textContent = `FoilHole_${ch.key}`;
+              }
+              card.appendChild(title);
+
+              // FoilHole image
+              if (ch.foilhole_url) {
+                const divImg = document.createElement('div');
+                const img = document.createElement('img');
+                img.className = 'thumb';
+                img.src = ch.foilhole_url;
+                img.loading = 'lazy';
+                img.alt = `FoilHole ${ch.index}`;
+                img.onclick = () => openModal(img.src);
+                divImg.appendChild(img);
+                card.appendChild(divImg);
+              } else {
+                const no = document.createElement('div');
+                no.className = 'no-img';
+                no.textContent = 'No FoilHole image found.';
+                card.appendChild(no);
+              }
+
+              // Micrograph image
+              if (ch.micro_url) {
+                const divImg2 = document.createElement('div');
+                divImg2.style.marginTop = '0.25rem';
+                const img2 = document.createElement('img');
+                img2.className = 'thumb';
+                img2.src = ch.micro_url;
+                img2.loading = 'lazy';
+                img2.alt = `Micrograph ${ch.index}`;
+                img2.onclick = () => openModal(img2.src);
+                divImg2.appendChild(img2);
+                card.appendChild(divImg2);
+              }
+
+
+              fhGrid.appendChild(card);
+            }
+
+            block.appendChild(fhGrid);
+          }
+
+          container.appendChild(block);
+        }
+
+        document.getElementById('gs-loading').style.display = 'none';
+      })
+      .catch(err => {
+        document.getElementById('gs-loading').textContent = 'Error loading grid squares.';
+        console.error(err);
+      });
+  </script>
+</body>
+</html>
