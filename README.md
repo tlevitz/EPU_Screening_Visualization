@@ -3,11 +3,14 @@ A web app using Flask that can run on a support PC and allow users to visualize 
 
 # Prerequisites
 
-1. This app requires that Windows Subsystem for Linux (WSL) and miniconda are downloaded on the support PC. All commands should be run in the WSL terminal.
+1. This app requires that Windows Subsystem for Linux (WSL) and miniconda are downloaded on the support PC. All commands should be run in the WSL terminal. You should have the output files mounted on the z drive (accessible via /mnt/z). If your z drive isn't mounted, you can run the following:
+```bash
+sudo mount -t drvfs Z: /mnt/z
+```
 
 2. The app assumes the following directory structure (standard for EPU). If you change this structure, you may also have to modify the script accordingly.
    
-<img width="496" height="520" alt="image" src="https://github.com/user-attachments/assets/4b8f00cf-b00f-47f6-bcf1-90aedb0912fb" />
+<img width="248" height="260" alt="image" src="https://github.com/user-attachments/assets/4b8f00cf-b00f-47f6-bcf1-90aedb0912fb" />
 
 # Getting Started
 
