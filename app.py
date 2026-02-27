@@ -111,14 +111,14 @@ def decode_path(token: str) -> str:
 
 def is_collection_session(session_dir: str) -> bool:
     """
-    Auto-detect mode: if any *Fractions.mrc exists under Images-Disc1, treat as collection.
+    Auto-detect mode: if any *Fractions files exist under Images-Disc1, treat as collection.
     """
     images_root = os.path.join(session_dir, "Images-Disc1")
     if not os.path.isdir(images_root):
         return False
     for root, dirs, files in os.walk(images_root):
         for f in files:
-            if f.lower().endswith(".mrc") and "fractions" in f.lower():
+            if "fractions" in f.lower():
                 return True
     return False
 
@@ -278,7 +278,6 @@ def get_session_stats_cached(session_dir: str, version: float):
     """
     pix_dict, beamsize_dict, caldate_dict = get_pixel_table()
     mode = "collection" if is_collection_session(session_dir) else "screening"
-
 
     if mode == "screening":
         df_all, atlas_path, instrument_model = process_directory_screening(
