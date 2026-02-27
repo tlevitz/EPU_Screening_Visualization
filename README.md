@@ -1,19 +1,43 @@
 # EPU_Screening_Visualization
 A web app using Flask that can run on a support PC and allow users to visualize screening and collection sessions running in a single particle session on EPU. Compatible with Tundra electron microscopes and should be mostly compatible with Krios and Talos microscopes.
 
-# Getting Started
+# Prerequisites
+
 1. This app requires that Windows Subsystem for Linux (WSL) and miniconda are downloaded on the support PC. All commands should be run in the WSL terminal.
-2. Generate a conda environment appropriate for the screening visualization
+
+2. The app assumes the following directory structure (standard for EPU). If you change this structure, you may also have to modify the script accordingly.
+   
+mnt/
+|------z/
+    |-----atlas_folder/
+        |-----Sample0/
+            |-----Atlas/
+                |-----Atlas.jpg/xml/mrc
+    |-----screening_folder/
+        |-----Images-Disc1/
+            |-----GridSquare*/
+                |-----Data/
+                    |-----FoilHole*Data*.jpg/mrc/xml
+                |-----FoilHoles/
+                    |-----FoilHole*.jpg/mrc/xml
+                |-----GridSquare*.xml/jpg/mrc
+        |-----Metadata/
+            |-----GridSquare*.dm
+        |-----EpuSession.dm
+        
+# Getting Started
+
+3. Generate a conda environment appropriate for the screening visualization
    ```bash
    conda create --name screening_vis python=3.9 reportlab Flask pandas numpy Pillow
    ```
-5. Activate the conda environment
+4. Activate the conda environment
    ```bash
    conda activate screening_vis
    ```
-6. Modify app.py as needed
+5. Modify app.py as needed
       - The code assumes that your screening and collection data are mounted at /mnt/z on the support PC. If this is not the case, modify the two locations in app.py that specify /mnt/z as the base root.
-7. Modify epu/epustats.py as needed
+6. Modify epu/epustats.py as needed
 
       - First, change
       ```python
@@ -40,7 +64,7 @@ A web app using Flask that can run on a support PC and allow users to visualize 
          fractions_ext = "tiff"
          pattern = "*Fractions.tiff"
       ```        
-8. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root. There is an example file provided here that you can modify. You can omit the beam size column for non-Tundra microscopes.
+7. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root. There is an example file provided here that you can modify. You can omit the beam size column for non-Tundra microscopes.
 
 # Running the Script
   ```bash
