@@ -2,7 +2,7 @@
 A web app using Flask that can run on a support PC and allow users to visualize screening and collection sessions running in a single particle session on EPU. Compatible with Tundra electron microscopes and should be mostly compatible with Krios and Talos microscopes.
 
 # Getting Started
-1. This app requires that Windows Subsystem for Linux (WSL) and miniconda are downloaded on the support PC
+1. This app requires that Windows Subsystem for Linux (WSL) and miniconda are downloaded on the support PC. All commands should be run in the WSL terminal.
 2. Generate a conda environment appropriate for the screening visualization
    ```bash
    conda create --name screening_vis python=3.9 reportlab Flask pandas numpy Pillow
