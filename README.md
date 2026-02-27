@@ -7,24 +7,8 @@ A web app using Flask that can run on a support PC and allow users to visualize 
 
 2. The app assumes the following directory structure (standard for EPU). If you change this structure, you may also have to modify the script accordingly.
    
-mnt/
-|------z/
-    |-----atlas_folder/
-        |-----Sample0/
-            |-----Atlas/
-                |-----Atlas.jpg/xml/mrc
-    |-----screening_folder/
-        |-----Images-Disc1/
-            |-----GridSquare*/
-                |-----Data/
-                    |-----FoilHole*Data*.jpg/mrc/xml
-                |-----FoilHoles/
-                    |-----FoilHole*.jpg/mrc/xml
-                |-----GridSquare*.xml/jpg/mrc
-        |-----Metadata/
-            |-----GridSquare*.dm
-        |-----EpuSession.dm
-        
+<img width="496" height="520" alt="image" src="https://github.com/user-attachments/assets/4b8f00cf-b00f-47f6-bcf1-90aedb0912fb" />
+
 # Getting Started
 
 3. Generate a conda environment appropriate for the screening visualization
