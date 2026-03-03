@@ -21,7 +21,7 @@
     .notes { max-width: 900px; }
 
     /* Thumbnails */
-    .thumb { max-width: 300px; cursor: pointer; border: 0px solid #ccc; display: inline-block; }
+    .thumb { cursor: pointer; border: 0px solid #ccc; display: block; }
     .atlas-img { max-width: 880px; max-height: 440px; }
     .gs-thumb { max-width: 1000px; max-height: 440px; }
 
@@ -32,20 +32,35 @@
     /* GridSquare / FoilHole layout */
     .gs-block { margin-top: 1rem; }
     .gs-image { margin-bottom: 0.5rem; }
+
     .fh-grid {
       display: flex;
       flex-wrap: wrap;
-      gap: 0.5rem;
+      align-items: flex-start;  /* key for variable-height stacking */
+      gap: 50px;
     }
+
     .fh-card {
       border: 0px solid #ccc;
       padding: 4px;
-      width: 20%;
-      min-width: 100px;
+      width: 300px;             /* fixed width => consistent wrapping */
       box-sizing: border-box;
       font-size: 20px;
+
+      display: flex;            /* stack contents vertically */
+      flex-direction: column;
+      gap: 6px;
     }
+
     .fh-card-title { font-weight: bold; margin-bottom: 0.25rem; }
+
+    /* Make stacked images fill the card width */
+    .fh-card img.thumb {
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
 
     /* Modal */
     .modal-backdrop {
@@ -295,20 +310,21 @@
                 card.appendChild(no);
               }
 
-              // Micrograph image
-              if (ch.micro_url) {
+              // Micrograph images (stacked)
+              const microUrls = (ch.micro_urls && ch.micro_urls.length) ? ch.micro_urls
+                              : (ch.micro_url ? [ch.micro_url] : []);
+
+              for (let mi = 0; mi < microUrls.length; mi++) {
                 const divImg2 = document.createElement('div');
-                divImg2.style.marginTop = '0.25rem';
                 const img2 = document.createElement('img');
                 img2.className = 'thumb';
-                img2.src = ch.micro_url;
+                img2.src = microUrls[mi];
                 img2.loading = 'lazy';
-                img2.alt = `Micrograph ${ch.index}`;
+                img2.alt = `Micrograph ${ch.index} #${mi+1}`;
                 img2.onclick = () => openModal(img2.src);
                 divImg2.appendChild(img2);
                 card.appendChild(divImg2);
               }
-
 
               fhGrid.appendChild(card);
             }
@@ -328,3 +344,5 @@
   </script>
 </body>
 </html>
+
+
