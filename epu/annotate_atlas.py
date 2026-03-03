@@ -40,6 +40,29 @@ def find_descendant_first(elem, name):
             return e
     return None
 
+def atlas_id_from_epu_dm(session_dir: str):
+    dm_path = os.path.join(session_dir, "EpuSession.dm")
+    if not os.path.isfile(dm_path):
+        return None
+    try:
+        root = ET.parse(dm_path).getroot()
+    except Exception:
+        return None
+    for elem in root.iter():
+        if localname(elem.tag).lower() == "atlasid":
+            txt = (elem.text or "").strip()
+            return txt if txt else None
+    return None
+
+def sample_from_atlas_id(atlas_id_text: str):
+    if not atlas_id_text:
+        return None
+    parts = [p for p in re.split(r"[\\/]+", atlas_id_text.strip().strip('"').strip("'")) if p]
+    for p in parts:
+        if re.match(r"(?i)^sample\d+$", p):
+            return p
+    return None
+
 def parse_atlas_nodes_precise(atlas_dm_path):
     """
     Parse Atlas.dm and extract atlas node metadata.
@@ -189,8 +212,50 @@ def parse_gridsquare_xml(xml_path):
             'stage_y': float(sy) if sy is not None else None}
 
 def map_grids_to_atlas(atlas_root, screening_root, check_node_center=True, fill_rotation='median'):
-    atlas_dm_path = os.path.join(atlas_root, 'Sample0', 'Atlas', 'Atlas.dm')
-    nodes, pairs = parse_atlas_nodes_precise(atlas_dm_path)
+    # Prefer the sample referenced by EpuSession.dm <AtlasId>
+    preferred_sample = sample_from_atlas_id(atlas_id_from_epu_dm(screening_root))
+
+    # Build candidate Atlas.dm paths in priority order
+    candidates = []
+    if preferred_sample:
+        candidates.append((preferred_sample, os.path.join(atlas_root, preferred_sample, "Atlas", "Atlas.dm")))
+
+    candidates.append(("Sample0", os.path.join(atlas_root, "Sample0", "Atlas", "Atlas.dm")))
+
+    # try any other SampleN
+    try:
+        for s in sorted(os.listdir(atlas_root)):
+            if not re.match(r"(?i)^sample\d+$", s):
+                continue
+            if s in (preferred_sample, "Sample0"):
+                continue
+            candidates.append((s, os.path.join(atlas_root, s, "Atlas", "Atlas.dm")))
+    except Exception:
+        pass
+
+    # last resort: atlas_root/Atlas/Atlas.dm (some datasets have this)
+    candidates.append(("Atlas", os.path.join(atlas_root, "Atlas", "Atlas.dm")))
+
+    nodes = pairs = None
+    used_sample = None
+    used_dm_path = None
+    last_err = None
+
+    for sample_name, atlas_dm_path in candidates:
+        if not os.path.isfile(atlas_dm_path):
+            continue
+        try:
+            nodes, pairs = parse_atlas_nodes_precise(atlas_dm_path)
+            used_sample = sample_name
+            used_dm_path = atlas_dm_path
+            break
+        except Exception as e:
+            last_err = e
+            continue
+
+    if nodes is None or pairs is None:
+        raise RuntimeError(f"Could not parse any Atlas.dm under {atlas_root}. Last error: {last_err}")
+
     stage_to_atlas, M = fit_stage_to_atlas_affine(pairs)
 
     discs = sorted([d for d in glob.glob(os.path.join(screening_root, 'Images-Disc*')) if os.path.isdir(d)]) or [screening_root]
@@ -211,11 +276,7 @@ def map_grids_to_atlas(atlas_root, screening_root, check_node_center=True, fill_
             m = re.search(r'GridSquare[_\s-]*([0-9]+)', os.path.basename(gdir), flags=re.IGNORECASE)
             grid_id = int(m.group(1)) if m else None
 
-            rot = None
-            shear = None
-            atlas_w = atlas_h = None
-            phys_w = phys_h = None
-            atlas_cx = atlas_cy = None
+            rot = shear = atlas_w = atlas_h = phys_w = phys_h = atlas_cx = atlas_cy = None
             if (grid_id is not None) and (grid_id in nodes):
                 node = nodes[grid_id]
                 rot = node.get('rotation', None)
@@ -257,7 +318,7 @@ def map_grids_to_atlas(atlas_root, screening_root, check_node_center=True, fill_
     if 'shear' in df.columns:
         df['shear'] = pd.to_numeric(df['shear'], errors='coerce').fillna(0.0)
 
-    return df, M
+    return df, M, used_sample, used_dm_path
 
 def square_type_and_mtime(folder):
     """
@@ -308,7 +369,7 @@ def annotate_atlas_pair(screening_root, atlas_root):
     SS = 3
     SCALE_BAR_METERS = 200e-6  # 200 µm
 
-    df, M = map_grids_to_atlas(atlas_root, screening_root, check_node_center=True, fill_rotation='median')
+    df, M, used_sample, used_dm_path = map_grids_to_atlas(atlas_root, screening_root, check_node_center=True, fill_rotation='median')
 
     # Classify and number
     colors, types, mtimes = [], [], []
@@ -324,7 +385,9 @@ def annotate_atlas_pair(screening_root, atlas_root):
     df['grid_square_index'] = range(1, len(df) + 1)
 
     # Load base atlas
-    atlas_jpgs = glob.glob(os.path.join(atlas_root, 'Sample0', 'Atlas', 'Atlas_*.jpg'))
+    sample_for_jpg = used_sample if used_sample and re.match(r"(?i)^sample\d+$", used_sample) else "Sample0"
+    atlas_jpgs = glob.glob(os.path.join(atlas_root, sample_for_jpg, 'Atlas', 'Atlas_*.jpg'))
+
     if not atlas_jpgs:
         raise FileNotFoundError(
             f'No atlas JPEGs found at {os.path.join(atlas_root, "Sample0", "Atlas", "Atlas_*.jpg")}'
@@ -609,3 +672,5 @@ def annotate_atlas_pair(screening_root, atlas_root):
         draw_bold_text_centered(final_draw, (cx, label_y), scale_bar_label, fill=(0, 0, 0), font=legend_font, stroke=0)
 
     return final_img
+
+
