@@ -179,7 +179,7 @@ def build_summary_rows(df_all, instrument_model, mode):
             "Defocus Values (um)",
         ]
     else:
-        if instrument_model == "TUNDRA-XXX":
+        if instrument_model == "TUNDRA-9956148":
             cols = [
                 "Date", "Folder", "Start Time", "End Time", "Total Time (hrs)",
                 "Grid Squares Collected", "Total Movies",
@@ -278,6 +278,7 @@ def get_session_stats_cached(session_dir: str, version: float):
     """
     pix_dict, beamsize_dict, caldate_dict = get_pixel_table()
     mode = "collection" if is_collection_session(session_dir) else "screening"
+
 
     if mode == "screening":
         df_all, atlas_path, instrument_model = process_directory_screening(
@@ -487,11 +488,25 @@ def session_atlas(session_id):
 
     def generate():
         _, atlas_root, atlas_source = get_session_nodes(session_dir)
+
+        # 1) Try annotated atlas (but don't hide failures)
         if atlas_root and annotate_atlas_pair is not None and atlas_source in ("dm_atlasid", "dm_hint", "cli"):
             try:
                 return annotate_atlas_pair(session_dir, atlas_root)
             except Exception:
-                pass
+                app.logger.exception("annotate_atlas_pair failed for session=%s atlas_root=%s", session_dir, atlas_root)
+
+        # 2) NEW: fall back to latest atlas JPG inside the atlas_root
+        if atlas_root:
+            jpg = find_latest_atlas_jpg(atlas_root, session_dir=session_dir)
+            if jpg:
+                from PIL import Image
+                try:
+                    return Image.open(jpg).convert("RGB")
+                except Exception:
+                    app.logger.exception("Failed to open atlas jpg: %s", jpg)
+
+        # 3) Existing fallback: look for atlas jpgs in the session folder itself
         fallbacks = find_fallback_atlas_jpgs(session_dir)
         if fallbacks:
             from PIL import Image
@@ -499,6 +514,7 @@ def session_atlas(session_id):
                 return Image.open(fallbacks[0]).convert("RGB")
             except Exception:
                 return None
+
         return None
 
     data = get_cached_image_bytes(cache_key, generate, fmt="JPEG")
@@ -707,3 +723,5 @@ def session_foilhole_micro(session_id, gs_index, child_index):
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+
