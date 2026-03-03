@@ -10,6 +10,7 @@ from datetime import datetime
 from functools import lru_cache
 
 from flask import Flask, render_template, send_file, abort, jsonify, request, url_for
+from PIL import Image
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module=r"numpy\._core\.getlimits")
@@ -179,7 +180,7 @@ def build_summary_rows(df_all, instrument_model, mode):
             "Defocus Values (um)",
         ]
     else:
-        if instrument_model == "TUNDRA-XXX":
+        if instrument_model == "TUNDRA-9956148":
             cols = [
                 "Date", "Folder", "Start Time", "End Time", "Total Time (hrs)",
                 "Grid Squares Collected", "Total Movies",
@@ -383,11 +384,15 @@ def session_nodes_json(session_id):
         children = []
         for ch in gs["children"]:
             ch_index = ch.get("index")
-            has_fh = bool(ch.get("foilhole_img_path"))
-            has_mg = bool(ch.get("micrograph_img_path"))
 
             foilhole_url = None
-            micro_url = None
+            micro_url = None  # important: define it
+
+            has_fh = bool(ch.get("foilhole_img_path"))
+
+            paths = ch.get("micrograph_img_paths") or []
+            has_mg = bool(paths) or bool(ch.get("micrograph_img_path"))
+
             if has_fh and gs_index and ch_index:
                 foilhole_url = url_for(
                     "session_foilhole_hole",
@@ -395,13 +400,17 @@ def session_nodes_json(session_id):
                     gs_index=gs_index,
                     child_index=ch_index,
                 )
-            if has_mg and gs_index and ch_index:
-                micro_url = url_for(
-                    "session_foilhole_micro",
-                    session_id=session_id,
-                    gs_index=gs_index,
-                    child_index=ch_index,
-                )
+
+            micro_urls = []
+            if gs_index and ch_index:
+                for i in range(len(paths)):
+                    micro_urls.append(url_for(
+                        "session_foilhole_micro_index",
+                        session_id=session_id,
+                        gs_index=gs_index,
+                        child_index=ch_index,
+                        micro_index=i
+                    ))
 
             children.append({
                 "index": ch_index,
@@ -409,18 +418,20 @@ def session_nodes_json(session_id):
                 "has_foilhole": has_fh,
                 "has_micrograph": has_mg,
                 "foilhole_url": foilhole_url,
+                "micro_urls": micro_urls,
                 "micro_url": micro_url,
             })
 
         out_nodes.append({
-            "index": gs_index,
+            "index": gs_index, 
             "name": gs.get("name"),
-            "epu": gs.get("epu"),
+            "epu": gs.get("epu"), 
             "children": children,
-        })
+        }) 
 
-    return jsonify({"nodes": out_nodes})
-
+    return jsonify({
+        "nodes": out_nodes
+    })
 
 @app.route("/session/<session_id>")
 def session_view(session_id):
@@ -500,7 +511,6 @@ def session_atlas(session_id):
         if atlas_root:
             jpg = find_latest_atlas_jpg(atlas_root, session_dir=session_dir)
             if jpg:
-                from PIL import Image
                 try:
                     return Image.open(jpg).convert("RGB")
                 except Exception:
@@ -509,7 +519,6 @@ def session_atlas(session_id):
         # 3) Existing fallback: look for atlas jpgs in the session folder itself
         fallbacks = find_fallback_atlas_jpgs(session_dir)
         if fallbacks:
-            from PIL import Image
             try:
                 return Image.open(fallbacks[0]).convert("RGB")
             except Exception:
@@ -673,7 +682,6 @@ def session_foilhole_hole(session_id, gs_index, child_index):
     if not path or not os.path.isfile(path):
         abort(404)
 
-    from PIL import Image
     img = Image.open(path).convert("RGB")
     img = add_scale_bar_by_xml(
         img,
@@ -685,8 +693,8 @@ def session_foilhole_hole(session_id, gs_index, child_index):
     return _pil_to_response(img, fmt="JPEG")
 
 
-@app.route("/session/<session_id>/foilhole/<int:gs_index>/<int:child_index>/micro")
-def session_foilhole_micro(session_id, gs_index, child_index):
+@app.route("/session/<session_id>/foilhole/<int:gs_index>/<int:child_index>/micro/<int:micro_index>")
+def session_foilhole_micro_index(session_id, gs_index, child_index, micro_index):
     try:
         session_dir = decode_path(session_id)
     except ValueError:
@@ -704,11 +712,11 @@ def session_foilhole_micro(session_id, gs_index, child_index):
         abort(404)
     child = children[0]
 
-    path = child.get("micrograph_img_path")
-    if not path or not os.path.isfile(path):
+    paths = child.get("micrograph_img_paths") or []
+    if micro_index < 0 or micro_index >= len(paths):
         abort(404)
+    path = paths[micro_index]
 
-    from PIL import Image
     img = Image.open(path).convert("RGB")
     img = add_scale_bar_by_xml(
         img,
