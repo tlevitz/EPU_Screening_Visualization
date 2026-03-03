@@ -486,14 +486,6 @@ def build_session_nodes(session_dir: str, atlas_root: Optional[str]):
             dt = dt if isinstance(dt, datetime) else None
             fh_latest_map[key] = (path, dt)
 
-        # --- filtering: only for non-GS1 grid squares, only if cutoff exists (to avoid showing template definition foilhole images) ---
-        if cutoff_dt is not None and gs1_dir is not None and gs_dir != gs1_dir:
-            fh_latest_map = {
-                k: (p, dt)
-                for k, (p, dt) in fh_latest_map.items()
-                if not (dt is not None and dt < cutoff_dt)
-            }
-
         # Convenience: key -> path only (after filtering)
         fh_path_map = {k: v[0] for k, v in fh_latest_map.items()}
 
@@ -511,17 +503,47 @@ def build_session_nodes(session_dir: str, atlas_root: Optional[str]):
         idx_map = {k: i + 1 for i, k in enumerate(keys_selected)}
 
         children = []
-        for key in keys_selected:
+
+        # keys_selected logic should be applied AFTER filtering, so build a keep-list first
+        kept_keys = []
+        tmp = []  # (key, fh_path, micro_path)
+
+        for key in fh_path_map.keys():
             fh_path = fh_path_map.get(key)
             micro = find_matching_micrograph(gs_dir, key)
 
-            child = {
+            # parse dt for this foilhole key (from fh_latest_map)
+            _fh_dt = fh_latest_map.get(key, (None, None))[1]
+
+            # NEW RULE: only suppress if before cutoff AND no micrograph
+            if cutoff_dt is not None and _fh_dt is not None and _fh_dt < cutoff_dt and not micro:
+                continue
+
+            kept_keys.append(key)
+            tmp.append((key, fh_path, micro))
+
+        # now apply selection logic on kept_keys (keep holes that have micrographs or are after the first micrograph image)
+        if get_selected_holes_for_gridsquare is not None:
+            try:
+                sel_keys_order, _sel_idx_map = get_selected_holes_for_gridsquare(gs_dir, max_show=12)
+                keys_selected = [k for k in sel_keys_order if k in kept_keys]
+            except Exception:
+                keys_selected = kept_keys
+        else:
+            keys_selected = kept_keys
+
+        idx_map = {k: i + 1 for i, k in enumerate(keys_selected)}
+
+        # finally build children from selected keys
+        tmp_map = {k: (fh, micro) for (k, fh, micro) in tmp}
+        for key in keys_selected:
+            fh_path, micro = tmp_map.get(key, (None, None))
+            children.append({
                 "key": key,
                 "index": idx_map.get(key),
                 "foilhole_img_path": fh_path if fh_path and os.path.isfile(fh_path) else None,
                 "micrograph_img_path": micro if micro and os.path.isfile(micro) else None,
-            }
-            children.append(child)
+            })
 
         nodes.append(
             {
@@ -542,3 +564,4 @@ def build_session_nodes(session_dir: str, atlas_root: Optional[str]):
         pass
 
     return nodes
+
