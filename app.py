@@ -180,7 +180,7 @@ def build_summary_rows(df_all, instrument_model, mode):
             "Defocus Values (um)",
         ]
     else:
-        if instrument_model == "TUNDRA-9956148":
+        if instrument_model == "TUNDRA-XXX":
             cols = [
                 "Date", "Folder", "Start Time", "End Time", "Total Time (hrs)",
                 "Grid Squares Collected", "Total Movies",
