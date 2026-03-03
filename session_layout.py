@@ -2,6 +2,9 @@
 
 import os
 import re
+import hashlib
+import random
+
 from datetime import datetime
 from typing import Optional, List, Dict, Tuple
 
@@ -127,10 +130,15 @@ def latest_foilholes_per_key(gs_dir: str):
     out.sort(key=lambda x: x[0])
     return out
 
-def find_matching_micrograph(gs_dir: str, foilhole_key: str) -> Optional[str]:
+def find_matching_micrographs(gs_dir: str, foilhole_key: str) -> List[str]:
+    """
+    Return ALL matching micrograph JPG paths for this FoilHole key, newest-first.
+    Matches your naming: FoilHole_<key>_Data_<...>_<...>_<YYYYMMDD>_<HHMMSS>.jpg
+    """
     data_dir = os.path.join(gs_dir, "Data")
     if not os.path.isdir(data_dir):
-        return None
+        return []
+
     candidates = []
     for name in os.listdir(data_dir):
         m = MICROGRAPH_RE.match(name)
@@ -139,11 +147,68 @@ def find_matching_micrograph(gs_dir: str, foilhole_key: str) -> Optional[str]:
         key, date_str, time_str = m.group(1), m.group(2), m.group(3)
         if key != foilhole_key:
             continue
-        candidates.append((os.path.join(data_dir, name), date_str, time_str))
-    if not candidates:
-        return None
-    candidates.sort(key=lambda tup: parse_datetime_tokens(tup[1], tup[2]), reverse=True)
-    return candidates[0][0]
+        dt = parse_datetime_tokens(date_str, time_str)
+        candidates.append((dt, os.path.join(data_dir, name)))
+
+    # sort newest-first; if dt parsing failed, it returns tuple(date,time) which is still sortable
+    candidates.sort(key=lambda t: t[0], reverse=True)
+    return [p for _, p in candidates]
+
+def choose_micrographs_for_display(keys_order, micro_map, max_total=12, seed_str=""):
+    """
+    keys_order: foilhole keys in priority order
+    micro_map: key -> list of micrograph paths (newest-first)
+    Returns: key -> list of chosen micrograph paths (preserve vertical stacking order)
+    """
+    seed = int(hashlib.md5(seed_str.encode("utf-8")).hexdigest()[:16], 16)
+    rng = random.Random(seed)
+
+    chosen = {k: [] for k in keys_order}
+
+    if len(keys_order) >= max_total:
+        # >12 foilholes: pick at most one micrograph per foilhole (random)
+        for k in keys_order[:max_total]:
+            lst = micro_map.get(k, [])
+            if lst:
+                chosen[k] = [rng.choice(lst)]
+        return chosen
+
+    # <12 foilholes: target up to 12 micrographs total, >=1 per foilhole if available
+    total = 0
+
+    # First pass: 1 per foilhole (if it has any)
+    for k in keys_order:
+        lst = micro_map.get(k, [])
+        if lst:
+            pick = rng.choice(lst)
+            chosen[k].append(pick)
+            total += 1
+
+    # Fill remaining slots by adding extra micrographs from foilholes in priority order
+    while total < max_total:
+        added_any = False
+        for k in keys_order:
+            if total >= max_total:
+                break
+            lst = micro_map.get(k, [])
+            if not lst:
+                continue
+            remaining = [p for p in lst if p not in chosen[k]]
+            if not remaining:
+                continue
+            chosen[k].append(rng.choice(remaining))
+            total += 1
+            added_any = True
+            if total >= max_total:
+                break
+        if not added_any:
+            break  # no more micrographs available anywhere
+
+    # Stack oldest-first visually
+    for k in chosen:
+        chosen[k] = sorted(chosen[k], key=lambda p: os.path.getmtime(p), reverse=False)
+
+    return chosen
 
 def find_gridsquares(base_folder: str) -> List[str]:
     gs_root = os.path.join(base_folder, "Images-Disc1")
@@ -489,60 +554,53 @@ def build_session_nodes(session_dir: str, atlas_root: Optional[str]):
         # Convenience: key -> path only (after filtering)
         fh_path_map = {k: v[0] for k, v in fh_latest_map.items()}
 
-        # Selection + indexing (filtered FoilHoles must not be indexed)
-        if get_selected_holes_for_gridsquare is not None:
-            try:
-                sel_keys_order, _sel_idx_map = get_selected_holes_for_gridsquare(gs_dir, max_show=12)
-                keys_selected = [k for k in sel_keys_order if k in fh_path_map]
-            except Exception:
-                keys_selected = list(fh_path_map.keys())
-        else:
-            keys_selected = list(fh_path_map.keys())
-
-        # Re-number sequentially after filtering (prevents gaps)
-        idx_map = {k: i + 1 for i, k in enumerate(keys_selected)}
-
-        children = []
-
-        # keys_selected logic should be applied AFTER filtering, so build a keep-list first
+        # Build per-key micrograph lists and apply suppression rule
+        fh_info = {}  # key -> dict(fh_path, fh_dt, micro_list_all)
         kept_keys = []
-        tmp = []  # (key, fh_path, micro_path)
 
-        for key in fh_path_map.keys():
-            fh_path = fh_path_map.get(key)
-            micro = find_matching_micrograph(gs_dir, key)
+        for k, (fh_path, fh_dt) in fh_latest_map.items():
+            micro_list_all = find_matching_micrographs(gs_dir, k)
 
-            # parse dt for this foilhole key (from fh_latest_map)
-            _fh_dt = fh_latest_map.get(key, (None, None))[1]
-
-            # NEW RULE: only suppress if before cutoff AND no micrograph
-            if cutoff_dt is not None and _fh_dt is not None and _fh_dt < cutoff_dt and not micro:
+            # NEW suppression rule:
+            if cutoff_dt is not None and fh_dt is not None and fh_dt < cutoff_dt and not micro_list_all:
                 continue
 
-            kept_keys.append(key)
-            tmp.append((key, fh_path, micro))
+            fh_info[k] = {"fh_path": fh_path, "fh_dt": fh_dt, "micro_list": micro_list_all}
+            kept_keys.append(k)
 
-        # now apply selection logic on kept_keys (keep holes that have micrographs or are after the first micrograph image)
+        # selection order (your existing logic), but restricted to kept_keys
         if get_selected_holes_for_gridsquare is not None:
             try:
-                sel_keys_order, _sel_idx_map = get_selected_holes_for_gridsquare(gs_dir, max_show=12)
+                sel_keys_order, _ = get_selected_holes_for_gridsquare(gs_dir, max_show=12)
                 keys_selected = [k for k in sel_keys_order if k in kept_keys]
             except Exception:
                 keys_selected = kept_keys
         else:
             keys_selected = kept_keys
 
+        # choose micrographs to display according to your new rules
+        micro_map = {k: fh_info[k]["micro_list"] for k in keys_selected}
+        chosen_micro = choose_micrographs_for_display(
+            keys_selected,
+            micro_map,
+            max_total=12,
+            seed_str=f"{session_dir}|{gs_dir}",  # deterministic per gridsquare; add version if you want it to change as data changes
+        )
+
+        # re-index holes sequentially
         idx_map = {k: i + 1 for i, k in enumerate(keys_selected)}
 
-        # finally build children from selected keys
-        tmp_map = {k: (fh, micro) for (k, fh, micro) in tmp}
-        for key in keys_selected:
-            fh_path, micro = tmp_map.get(key, (None, None))
+        children = []
+        for k in keys_selected:
+            fh_path = fh_info[k]["fh_path"]
+            micro_paths = chosen_micro.get(k, [])
             children.append({
-                "key": key,
-                "index": idx_map.get(key),
+                "key": k,
+                "index": idx_map[k],
                 "foilhole_img_path": fh_path if fh_path and os.path.isfile(fh_path) else None,
-                "micrograph_img_path": micro if micro and os.path.isfile(micro) else None,
+                "micrograph_img_paths": [p for p in micro_paths if os.path.isfile(p)],
+                # keep old field for backward compat:
+                "micrograph_img_path": micro_paths[0] if micro_paths else None,
             })
 
         nodes.append(
