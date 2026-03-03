@@ -397,6 +397,7 @@ def scan_data_micrographs(gs_dir):
         lower = fname.lower()
         if not (lower.endswith(".mrc") or lower.endswith(".tiff") or lower.endswith(".tif")):
             continue
+
         m = re.search(r"FoilHole_(\d+)", fname)
         if not m:
             continue
@@ -533,9 +534,18 @@ def draw_marker_supersampled(od, x_c, y_c, color_rgb, radius_px_global, SUPERSAM
 
 # -------- FoilHole discovery and GridSquare file pickers --------
 
-def find_unique_foilhole_xmls_earliest_latest(foilholes_dir, min_ts: datetime | None = None):
+def find_unique_foilhole_xmls_earliest_latest(
+    foilholes_dir,
+    min_ts: datetime | None = None,
+    keep_uniqs: set[str] | None = None,
+):
     if not os.path.isdir(foilholes_dir):
         return []
+
+    keep = set()
+    if keep_uniqs:
+        keep = {canonicalize_uniq(u) for u in keep_uniqs if u is not None}
+
     records = {}
     for fname in os.listdir(foilholes_dir):
         m = FH_XML_RE.match(fname)
@@ -547,8 +557,10 @@ def find_unique_foilhole_xmls_earliest_latest(foilholes_dir, min_ts: datetime | 
         except Exception:
             continue
 
-        # NEW: filter out template-definition FoilHoles (too early)
-        if min_ts is not None and ts < min_ts:
+        uniq_canon = canonicalize_uniq(uniq)
+
+        # suppress only if early AND no micrograph exists for that uniq
+        if min_ts is not None and ts < min_ts and uniq_canon not in keep:
             continue
 
         full = os.path.join(foilholes_dir, fname)
@@ -766,8 +778,14 @@ def get_selected_holes_for_gridsquare(gs_dir, max_show=12, min_ts: datetime | No
     W, H = base_img.size
     dm_centers, dm_pos_map = build_dm_pos_map(gs_xml, gs_meta, W, H)
     foilholes_dir = os.path.join(gs_dir, "FoilHoles")
-    fh_map = find_unique_foilhole_xmls_earliest_latest(foilholes_dir, min_ts=min_ts)
     data_status = scan_data_micrographs(gs_dir)
+    keep_uniqs = {u for u, st in data_status.items() if st in ("screening", "collection")}
+
+    fh_map = find_unique_foilhole_xmls_earliest_latest(
+        foilholes_dir,
+        min_ts=min_ts,
+        keep_uniqs=keep_uniqs,
+    )
 
     earliest_order = [
         canonicalize_uniq(uq) for (uq, _rec) in fh_map if canonicalize_uniq(uq) in dm_pos_map
@@ -911,7 +929,14 @@ def annotate_gridsquare_left(gs_dir, min_ts: datetime | None = None):
     dm_meta, _ = parse_dm_meta(gs_xml)
 
     foilholes_dir = os.path.join(gs_dir, "FoilHoles")
-    fh_map = find_unique_foilhole_xmls_earliest_latest(foilholes_dir, min_ts=min_ts)
+    data_status = scan_data_micrographs(gs_dir)
+    keep_uniqs = {u for u, st in data_status.items() if st in ("screening", "collection")}
+
+    fh_map = find_unique_foilhole_xmls_earliest_latest(
+        foilholes_dir,
+        min_ts=min_ts,
+        keep_uniqs=keep_uniqs,
+    )
 
     img = Image.open(gs_jpg).convert("RGB")
     W, H = img.size
