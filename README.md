@@ -1,14 +1,14 @@
 # EPU_Screening_Visualization
-A web app using Flask that can run on a support PC and allow users to visualize screening and collection sessions running in a single particle session on EPU. Compatible with Tundra electron microscopes and should be mostly compatible with Krios and Talos microscopes.
+A web app using Flask that can run on a support PC and allow users to visualize screening and collection sessions running in a single particle session on EPU. Designed for use with a Tundra / Ceta-F setup, but should be compatible with other microscope/camera systems running EPU.
 
 # Prerequisites
 
-1. This app requires that Windows Subsystem for Linux (WSL) and miniconda are downloaded on the support PC. All commands should be run in the WSL terminal. You should have the output files mounted on the z drive (accessible via /mnt/z). If your z drive isn't mounted, you can run the following:
+1. This app requires that Windows Subsystem for Linux (WSL) and miniconda are downloaded on the support PC. All commands should be run in the WSL terminal. You should have the output files mounted on the a drive accessible via /mnt/z (or your letter of choice). If your drive isn't mounted, you can run the following to mount it to z:
 ```bash
 sudo mount -t drvfs Z: /mnt/z
 ```
 
-2. The app assumes the following directory structure (standard for EPU). If you change this structure, you may also have to modify the script accordingly.
+2. The app assumes the following directory structure (standard for EPU) aside from the mount location. If you change this structure, you may also have to modify the script accordingly.
    
 <img width="248" height="260" alt="image" src="https://github.com/user-attachments/assets/4b8f00cf-b00f-47f6-bcf1-90aedb0912fb" />
 
@@ -22,36 +22,56 @@ sudo mount -t drvfs Z: /mnt/z
    ```bash
    conda activate screening_vis
    ```
-5. Modify app.py as needed
-      - The code assumes that your screening and collection data are mounted at /mnt/z on the support PC. If this is not the case, modify the two locations in app.py that specify /mnt/z as the base root.
-6. Modify epu/epustats.py as needed
+5. Modify this section of app.py if you have the drive mounted in a different location or if you have pixel sizes located somewhere other than in the base directory (see step 7 for more on this)
+   
+   ```python
+   BASE_ROOT = "/mnt/z"
+   PIXEL_TABLE_PATH = os.path.join(BASE_ROOT, "pixelsizes.txt")
+   ```
+   
+6. Modify this section of epu/epustats.py with your microscope information
 
-      - First, change
-      ```python
-      MICROSCOPE_INFO = {
-         "TUNDRA-XXX": ("DFCI Tundra", 1.6),
-         "TITANXXX": ("HMS Krios2", 2.7),
-         "TITANXXX": ("HMS Krios1", 2.7),
-      }
-      ```
-      to contain your serial number in the XXX spot and the correct spherical aberration in mm for your microscope. Note that the Tundra has a hyphen after it whereas the Titan does not. 
+   ```python
+   MICROSCOPE_INFO = {
+       "TUNDRA-XXX": ("DFCI Tundra", 1.6),
+       "TITANXXX": ("HMS Krios2", 2.7),
+       "TITANXXX": ("HMS Krios1", 2.7),
+   }
 
-      - Next, if you will be using this script with a Tundra, modify the instances of
-      ```python
-      if instrument_model == "TUNDRA-XXX":
-      ```
-      to contain your serial number in the XXX spot. 
+   windows_root = "Z:\\"
+   ```
 
-      - Lastly, depending on your image format, you may have to modify this snippet to change the extension:
-      ```python
-      if instrument_model == "TUNDRA-XXX":
-         fractions_ext = "mrc"
-         pattern = "*Fractions.mrc"
-      else:
-         fractions_ext = "tiff"
-         pattern = "*Fractions.tiff"
-      ```        
-7. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root. There is an example file provided here that you can modify. You can omit the beam size column for non-Tundra microscopes.
+   MICROSCOPE_INFO should contain your InstrumentModel (replace XXX with the serial number) followed by the
+   spherical aberration in mm. If you do not know what to use for InstrumentModel, you can run 
+   ```bash
+   grep InstrumentModel FoilHole*.xml
+   ```
+   in a bash terminal within Images-Disc1/GridSquare*/Data/ (repalace the * after FoilHole with a single file
+   name)
+   
+   The windows_root is the root of where the atlas is stored. This is most likely the same drive as your
+   base_root above, but as it appears in the actual .xml files (usually you can just change the
+   letter in the format above -- there should be one extra backslash as shown above). If you are not sure what
+   your root is, you can run
+   ```bash
+   grep -oP 'AtlasId .{0,50}' EpuSession.dm
+   ```
+   in the terminal while standing in the base directory of an imaging session. This is only used to "clean up"
+   the atlas path displayed in the summary table.
+   
+7. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root. There is an example file provided here that you can modify. You can omit the beam size column for 3-condenser systems.
+
+8. If your microscope writes out .tiff files, or if you have a Ceta-F that writes out .mrc files, you do
+   not need to change anything. Otherwise, you will have to modify this segment of epu/epustats.py to include
+   your file extension(s). 
+   ```python
+    if cam_name == "Ceta-F":
+        fractions_ext = "mrc"
+        pattern = "*Fractions.mrc"
+    else:
+        fractions_ext = "tiff"
+        pattern = "*Fractions.tiff"
+   ```
 
 # Running the Script
   ```bash
