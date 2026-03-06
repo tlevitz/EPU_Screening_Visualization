@@ -672,5 +672,3 @@ def annotate_atlas_pair(screening_root, atlas_root):
         draw_bold_text_centered(final_draw, (cx, label_y), scale_bar_label, fill=(0, 0, 0), font=legend_font, stroke=0)
 
     return final_img
-
-

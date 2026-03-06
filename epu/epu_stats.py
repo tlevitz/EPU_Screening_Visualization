@@ -10,6 +10,18 @@ from pathlib import Path
 import pandas as pd
 import xml.etree.ElementTree as ET
 
+# ----
+
+## FILL IN THIS INFORMATION WITH YOUR SCOPES AND WINDOWS ROOT ##
+
+MICROSCOPE_INFO = {
+    "TUNDRA-XXX": ("DFCI Tundra", 1.6),
+    "TITANXXX": ("HMS Krios2", 2.7),
+    "TITANXXX": ("HMS Krios1", 2.7),
+}
+
+windows_root = "Z:\\"
+
 # ----------------------------
 # Filesystem helpers
 # ----------------------------
@@ -194,37 +206,60 @@ def get_foilhole_ns(root):
     else:
         return {}  # no namespace
 
+def _normalize_custom_value_to_string(v):
+    """
+    Normalize CustomData <Value> into a string.
+    - If it looks boolean-like, return "true" / "false"
+    - Otherwise return stripped string
+    - Return None for empty/missing
+    """
+    if v is None:
+        return None
+
+    # If some parser ever gives an actual bool
+    if isinstance(v, bool):
+        return "true" if v else "false"
+
+    s = str(v).strip()
+    if s == "":
+        return None
+
+    sl = s.lower()
+    if sl in ("true", "t", "1", "yes", "y", "on"):
+        return "true"
+    if sl in ("false", "f", "0", "no", "n", "off"):
+        return "false"
+
+    return s
 
 def parse_custom_value(root, key):
     """
     For FoilHole XML: CustomData contains a list of KeyValueOfstringanyType.
-    We search for the given key and return the text of Value.
+    We search for the given key and return the value as a normalized string.
     Handles both namespaced and non-namespaced forms, ignoring prefixes.
     """
-    # Try namespaced CustomData first
     custom = root.find(".//fh:CustomData", get_foilhole_ns(root))
     if custom is None:
-        # Fallback: no namespace
         custom = root.find(".//CustomData")
     if custom is None:
         return None
 
     for kv in list(custom):
-        # Find any child whose local name is 'Key' or 'Value', ignoring prefixes
         k_elem = None
         v_elem = None
         for child in list(kv):
             tag = child.tag
-            if tag.endswith('}Key') or tag == 'Key':
+            if tag.endswith("}Key") or tag == "Key":
                 k_elem = child
-            elif tag.endswith('}Value') or tag == 'Value':
+            elif tag.endswith("}Value") or tag == "Value":
                 v_elem = child
 
         if k_elem is None or v_elem is None:
             continue
 
-        if k_elem.text and k_elem.text.strip() == key:
-            return v_elem.text
+        if (k_elem.text or "").strip() == key:
+            return _normalize_custom_value_to_string(v_elem.text)
+
     return None
 
 def parse_micrograph_xml(file_path, pix_dict, beamsize_dict, caldate_dict):
@@ -357,8 +392,11 @@ def parse_micrograph_xml(file_path, pix_dict, beamsize_dict, caldate_dict):
     else:
         values["Image Dimensions (pixels)"] = None
 
-    # Camera mode (Counting/Linear) from CustomData for Falcon
-    electron_counted = parse_custom_value(root, "Detectors[EF-Falcon].ElectronCounted")
+    # Camera mode (Counting/Linear) from camera info
+    counted_key = f"Detectors[{cam_TF_name}].ElectronCounted"
+    electron_counted = parse_custom_value(root, counted_key)
+    print(f"Detectors[{cam_TF_name}].ElectronCounted")
+    print(f"ELECTRON COUNTED IS {electron_counted}")
     if electron_counted is not None:
         if electron_counted.lower() == "true":
             values["Camera Mode"] = "Counting"
@@ -368,7 +406,8 @@ def parse_micrograph_xml(file_path, pix_dict, beamsize_dict, caldate_dict):
             values["Camera Mode"] = "Unknown"
 
     # Gain reference file (Krios)
-    gain_ref = parse_custom_value(root, "Detectors[EF-Falcon].GainReference")
+    gain_key = f"Detectors[{cam_TF_name}].GainReference"
+    gain_ref = parse_custom_value(root, gain_key)
     if gain_ref is not None:
         values["Gain Reference File"] = gain_ref.strip()
 
@@ -402,13 +441,7 @@ def parse_micrograph_xml(file_path, pix_dict, beamsize_dict, caldate_dict):
         values["Approx. Total Dose (e/A2)"] = round(dose_per_A2, 2)
         values["Approx. Dose Rate (e/pix/s)"] = round(dose_e_per_pix / exp_s, 2)
 
-    return values, instrument_model
-
-MICROSCOPE_INFO = {
-    "TUNDRA-XXX": ("DFCI Tundra", 1.6),
-    "TITANXXX": ("HMS Krios2", 2.7),
-    "TITANXXX": ("HMS Krios1", 2.7),
-}
+    return values, instrument_model, cam_name
 
 def load_calibration_table(path):
     df = pd.read_csv(path, sep=None, engine="python")
@@ -438,12 +471,15 @@ def get_calibrated_values(mag, pix_dict, beamsize_dict, caldate_dict):
 # EpuSession.dm parsing (namespaced)
 # ----------------------------
 
-def parse_sample_info(root):
+def parse_sample_info(root, windows_root):
     sample = root.find(".//d:Samples/d:_items/d:SampleXml", NS)
     if sample is None:
         return None, None, None, None, None
 
     atlas_path = find_text(sample, "./d:AtlasId")
+    atlas_path = atlas_path.replace(windows_root, '')
+    atlas_path = atlas_path.replace('\\Atlas.dm', '')
+
     grid_geometry = find_text(sample, "./d:GridGeometry")
     grid_type = find_text(sample, "./d:GridType")
 
@@ -698,7 +734,7 @@ def parse_epu_session_dm(file_path):
     tree = ET.parse(file_path)
     root = tree.getroot()
 
-    atlas_path, grid_type, grid_geometry, hole_size_um, hole_spacing_um = parse_sample_info(root)
+    atlas_path, grid_type, grid_geometry, hole_size_um, hole_spacing_um = parse_sample_info(root, windows_root)
     afis, afis_dist = parse_afis(root)
     defocus_values, acq_areas = parse_defocus_and_acq_areas(root)
     image_dims, num_fractions, c2_ap, beam_um = parse_data_acquisition_block(root)
@@ -759,10 +795,10 @@ def process_directory_screening(directory, pix_dict, beamsize_dict, caldate_dict
 
     df = pd.DataFrame(
         [[date, folder_name, grid_squares, total_micrographs]],
-        columns=["Date", "Folder", "Grid Squares Collected", "Total Micrographs"]
+        columns=["Date", "Folder", "Grid Squares Screened", "Total Micrographs"]
     )
     df["Average Micrographs per Grid Square"] = (
-        df["Total Micrographs"] / df["Grid Squares Collected"]
+        df["Total Micrographs"] / df["Grid Squares Screened"]
     ).round(2)
 
     foil_xml = find_first_foilhole_xml_in_data(directory)
@@ -770,7 +806,7 @@ def process_directory_screening(directory, pix_dict, beamsize_dict, caldate_dict
         print(f"No FoilHole XML found in Images-Disc1/*/Data for {directory}")
         return df, None, None
 
-    xml_values, instrument_model = parse_micrograph_xml(foil_xml, pix_dict, beamsize_dict, caldate_dict)
+    xml_values, instrument_model, cam_name = parse_micrograph_xml(foil_xml, pix_dict, beamsize_dict, caldate_dict)
 
     epu_session_file = os.path.join(directory, "EpuSession.dm")
     dm_values = {}
@@ -789,7 +825,7 @@ def process_directory_screening(directory, pix_dict, beamsize_dict, caldate_dict
 
     df_all = pd.concat([df.reset_index(drop=True), df_xml, df_dm], axis=1)
 
-    if instrument_model == "TUNDRA-XXX":
+    if instrument_model and "TUNDRA" in instrument_model.upper():
         drop_cols = [c for c in df_all.columns if c.startswith("Energy Filter")]
         df_all = df_all.drop(columns=drop_cols, errors="ignore")
 
@@ -806,9 +842,9 @@ def process_directory_collection(directory, pix_dict, beamsize_dict, caldate_dic
     foil_xml = find_first_foilhole_xml_in_data(directory)
     if foil_xml is None:
         raise RuntimeError(f"No FoilHole XML found in Images-Disc1/*/Data for {directory}")
-    _, instrument_model = parse_micrograph_xml(foil_xml, pix_dict, beamsize_dict, caldate_dict)
+    _, instrument_model, cam_name = parse_micrograph_xml(foil_xml, pix_dict, beamsize_dict, caldate_dict)
 
-    if instrument_model == "TUNDRA-XXX":
+    if cam_name == "Ceta-F":
         fractions_ext = "mrc"
         pattern = "*Fractions.mrc"
     else:
@@ -846,7 +882,7 @@ def process_directory_collection(directory, pix_dict, beamsize_dict, caldate_dic
     if foil_xml2 is None:
         foil_xml2 = foil_xml
 
-    xml_values, instrument_model = parse_micrograph_xml(foil_xml2, pix_dict, beamsize_dict, caldate_dict)
+    xml_values, instrument_model, cam_name = parse_micrograph_xml(foil_xml2, pix_dict, beamsize_dict, caldate_dict)
 
     epu_session_file = os.path.join(directory, "EpuSession.dm")
     dm_values = {}
@@ -865,157 +901,11 @@ def process_directory_collection(directory, pix_dict, beamsize_dict, caldate_dic
 
     df_all = pd.concat([df.reset_index(drop=True), df_xml, df_dm], axis=1)
 
-    if instrument_model == "TUNDRA-XXX":
+    if instrument_model and "TUNDRA" in instrument_model.upper():
         drop_cols = [c for c in df_all.columns if c.startswith("Energy Filter")]
         df_all = df_all.drop(columns=drop_cols, errors="ignore")
 
-    return df_all, atlas_path, instrument_model
-
-# ----------------------------
-# Output formatting
-# ----------------------------
-
-def write_table(directory, df, instrument_model, mode):
-    folder_name = str(df.loc[0, "Folder"]) if "Folder" in df.columns else ""
-
-    if mode == "screening":
-        out_name = f"screening_stats_{folder_name}.txt"
-    else:
-        out_name = f"collection_stats_{folder_name}.txt"
-
-    if mode == "screening":
-        cols = [
-            "Date", "Folder", "Grid Squares Collected", "Total Micrographs",
-            "Average Micrographs per Grid Square",
-            "Microscope", "Acceleration Voltage (kV)", "Extractor Voltage (V)",
-            "Spherical Aberration (mm)", "Gun Lens", "Spot Size", "Intensity",
-            "EPU Version", "C2 Aperture (um)", "Objective Aperture (um)",
-            "Camera", "Image Dimensions (pixels)", "Nominal Magnification",
-            "EPU Pixel Size (A/pix)", "Calibrated Pixel Size (A/pix)",
-            "Beam Size (um)", "Pixel and Beam Size Calibration Date",
-            "Exposure Time (s)", "Approx. Total Dose (e/pix)",
-            "Approx. Total Dose (e/A2)", "Approx. Dose Rate (e/pix/s)",
-            "Grid Type", "Grid Geometry", "EPU Measured Hole Size (um)",
-            "EPU Measured Hole Center-to-Center Distance (um)",
-            "Best Guess Hole Size and Spacing (um)",
-            "Number of Acquisition Areas (Shots Per Hole)",
-            "AFIS", "AFIS Clustering Distance (um)",
-            "Defocus Values (um)",
-        ]
-    else:
-        if instrument_model == "TUNDRA-XXX":
-            cols = [
-                "Date", "Folder", "Start Time", "End Time", "Total Time (hrs)",
-                "Grid Squares Collected", "Total Movies",
-                "Average Movies per Grid Square", "Movies per Hour",
-                "Microscope", "Acceleration Voltage (kV)", "Extractor Voltage (V)",
-                "Spherical Aberration (mm)", "Gun Lens", "Spot Size", "Intensity",
-                "EPU Version", "C2 Aperture (um)", "Objective Aperture (um)",
-                "Camera", "Image Dimensions (pixels)", "Nominal Magnification",
-                "EPU Pixel Size (A/pix)", "Calibrated Pixel Size (A/pix)",
-                "Beam Size (um)", "Pixel and Beam Size Calibration Date",
-                "Exposure Time (s)", "Approx. Total Dose (e/pix)",
-                "Approx. Total Dose (e/A2)", "Approx. Dose Rate (e/pix/s)",
-                "Grid Type", "Grid Geometry", "EPU Measured Hole Size (um)",
-                "EPU Measured Hole Center-to-Center Distance (um)",
-                "Best Guess Hole Size and Spacing (um)",
-                "Number of Acquisition Areas (Shots Per Hole)",
-                "AFIS", "AFIS Clustering Distance (um)",
-                "Number of Fractions", "Defocus Values (um)",
-            ]
-        else:
-            cols = [
-                "Date", "Folder", "Atlas Path", "Gain Reference File",
-                "EPU Version", "Start Time", "End Time", "Total Time (hrs)",
-                "Grid Squares Collected", "Total Movies",
-                "Average Movies per Grid Square", "Movies per Hour",
-                "Stage Tilt (Degrees)", "Microscope",
-                "Acceleration Voltage (kV)", "Extractor Voltage (V)",
-                "Spherical Aberration (mm)", "Gun Lens", "Spot Size",
-                "Beam Diameter (um)", "C2 Aperture (um)", "C3 Aperture (um)",
-                "Objective Aperture (um)", "Energy Filter",
-                "Energy Filter Slit Width (eV)", "Illumination Mode",
-                "Camera", "Camera Mode", "Image Dimensions (pixels)",
-                "Nominal Magnification", "EPU Pixel Size (A/pix)",
-                "Calibrated Pixel Size (A/pix)", "Pixel Size Calibration Date",
-                "Exposure Time (s)", "Approx. Total Dose (e/pix)",
-                "Approx. Total Dose (e/A2)", "Approx. Dose Rate (e/pix/s)",
-                "Grid Type", "Grid Geometry", "EPU Measured Hole Size (um)",
-                "EPU Measured Hole Center-to-Center Distance (um)",
-                "Best Guess Hole Size and Spacing (um)",
-                "Number of Acquisition Areas (Shots Per Hole)",
-                "AFIS", "AFIS Clustering Distance (um)",
-                "Number of Fractions", "Defocus Values (um)",
-            ]
-
-    cols = [c for c in cols if c in df.columns]
-    df_out = df[cols].transpose()
-    
-    # --- BEGIN: custom formatting for Defocus Values (um) ---
-    if "Defocus Values (um)" in df_out.index:
-        def format_defocus(val):
-            # Expect val like [[-1.0, -1.5], [-2.0, -2.5]]
-            if not isinstance(val, list):
-                return val
-            # Convert each inner list to its string form, then join with ", "
-            inner_strs = [str(inner) for inner in val]
-            return ", ".join(inner_strs)
-        df_out.loc["Defocus Values (um)"] = df_out.loc["Defocus Values (um)"].apply(format_defocus)
-    # --- END: custom formatting for Defocus Values (um) ---    
-
-    max_widths = {col: df_out[col].astype(str).map(len).max() for col in df_out.columns}
-    justified_df = df_out.apply(lambda col: col.astype(str).str.ljust(max_widths[col.name]))
-
-    formatted_string = justified_df.to_string(index=True, header=False, justify='left')
-
-    out_path = os.path.join(directory, out_name)
-    with open(out_path, "w") as f:
-        f.write(formatted_string)
-
-    if mode == "screening":
-        notes = (
-            "\n\nNotes:\n"
-            "    -These statistics are for the first image taken in the screening set. "
-            "If you took images at different microscope settings, this will not be correct for all images.\n"
-            "    -Please contact Talya if any of these numbers appear to be incorrect! The script may need updating.\n"
-            "    -The dose is approximated from the first movie. The total dose on specimen is slightly higher; "
-            "however, if you did not record the dose when setting up collection, this will be appropriate for most (if not all) processing.\n"
-            "    -The hole size and spacing is guessed based on the measure hole size function in EPU. "
-            "If you are using an uncommon hole size/spacing, it may misidentify it.\n"
-            "    -Pixel size is listed both as the pixel size automatically coded in EPU as well as the experimentally-calibrated pixel size. "
-            "I advise that you use the calibrated pixel size in processing."
-        )
-    else:
-        notes = (
-            "\n\nNotes:\n"
-            "    -Please contact Talya if any of these numbers appear to be incorrect! The script may need updating.\n"
-            "    -The dose is approximated from the first movie. The total dose on specimen is slightly higher; "
-            "however, if you did not record the dose when setting up collection, this will be appropriate for most (if not all) processing.\n"
-            "    -The hole size and spacing is guessed based on the measure hole size function in EPU. "
-            "If you are using an uncommon hole size/spacing, it may misidentify it.\n"
-            "    -Pixel size is listed both as the pixel size automatically coded in EPU as well as the experimentally-calibrated pixel size. "
-            "I advise that you use the calibrated pixel size in processing."
-        )
-
-    with open(out_path, "a") as f:
-        f.write(notes)
-
-    return df_out
-
-def write_atlaspaths(directory, df, atlas_path, instrument_model):
-    if instrument_model != "TUNDRA-XXX":
-        return
-    if atlas_path is None:
-        return
-
-    cleaned = atlas_path.replace('Z:\\', '')
-    cleaned = cleaned.replace('\\Sample0\\Atlas\\Atlas.dm', '')
-
-    head, tail = os.path.split(directory)
-    atlas_path_file = os.path.join(head, '.atlaspaths.txt')
-    folder_name = df.iloc[1, 0]
-    with open(atlas_path_file, 'a') as f:
-        f.write(f"{folder_name} {cleaned}\n")
+    return df_all, atlas_path, instrument_model, cam_name
 
 # ----------------------------
 # Main
@@ -1041,12 +931,9 @@ def main():
             directory, pix_dict, beamsize_dict, caldate_dict
         )
     else:
-        df_all, atlas_path, instrument_model = process_directory_collection(
+        df_all, atlas_path, instrument_model, cam_name = process_directory_collection(
             directory, pix_dict, beamsize_dict, caldate_dict
         )
-
-    df_out = write_table(directory, df_all, instrument_model, mode)
-    write_atlaspaths(directory, df_out, atlas_path, instrument_model)
 
 if __name__ == "__main__":
     main()

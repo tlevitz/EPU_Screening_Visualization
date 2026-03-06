@@ -229,6 +229,152 @@ def extract_epu_from_gridsquare_name(gs_name: str) -> Optional[str]:
 def _ln(tag: str) -> str:
     return tag.split("}")[-1] if isinstance(tag, str) else tag
 
+def _parse_acquisition_area_shifts_from_dm(session_dir: str) -> List[Tuple[float, float]]:
+    """
+    Return list of (dx_px, dy_px) template shifts for DataAcquisitionAreas from EpuSession.dm.
+    If not found, returns [].
+    """
+    dm_path = os.path.join(session_dir, "EpuSession.dm")
+    if not os.path.isfile(dm_path):
+        return []
+
+    try:
+        root = ET.parse(dm_path).getroot()
+    except Exception:
+        return []
+
+    def find_first(elem, local_name):
+        for e in elem.iter():
+            if _ln(e.tag) == local_name:
+                return e
+        return None
+
+    def parse_shift(node):
+        if node is None:
+            return None
+        dx = dy = None
+        for ch in node.iter():
+            ln = _ln(ch.tag).lower()
+            if ln == "width":
+                try:
+                    dx = float(ch.text)
+                except Exception:
+                    pass
+            elif ln == "height":
+                try:
+                    dy = float(ch.text)
+                except Exception:
+                    pass
+        if dx is None or dy is None:
+            return None
+        return (dx, dy)
+
+    shifts: List[Tuple[float, float]] = []
+    daa_node = find_first(root, "DataAcquisitionAreas")
+    if daa_node is None:
+        return shifts
+
+    for kv in daa_node.iter():
+        if "KeyValuePair" not in _ln(kv.tag):
+            continue
+        value_elem = None
+        for ch in kv:
+            if _ln(ch.tag) == "value":
+                value_elem = ch
+                break
+        if value_elem is None:
+            continue
+
+        sh = find_first(value_elem, "ShiftInPixels")
+        s = parse_shift(sh)
+        if s is not None:
+            shifts.append(s)
+
+    return shifts
+
+def _find_matching_micrograph_xml_from_jpg(micro_jpg_path: str) -> Optional[str]:
+    """
+    Best-effort match micrograph XML in same folder.
+    Tries exact .xml name first, then falls back to scanning by FoilHole_<key>_..._<YYYYMMDD>_<HHMMSS>.xml.
+    """
+    base = os.path.splitext(micro_jpg_path)[0]
+    direct = base + ".xml"
+    if os.path.isfile(direct):
+        return direct
+
+    name = os.path.basename(micro_jpg_path)
+    m = MICROGRAPH_RE.match(name)
+    if not m:
+        return None
+    key, date_str, time_str = m.group(1), m.group(2), m.group(3)
+    ts = f"{date_str}_{time_str}"
+
+    data_dir = os.path.dirname(micro_jpg_path)
+    try:
+        for n in os.listdir(data_dir):
+            if not n.lower().endswith(".xml"):
+                continue
+            if not n.lower().startswith(f"foilhole_{key.lower()}_"):
+                continue
+            if ts in n:
+                p = os.path.join(data_dir, n)
+                if os.path.isfile(p):
+                    return p
+    except Exception:
+        return None
+
+    return None
+
+def _parse_shift_in_pixels_from_micrograph_xml(xml_path: str) -> Optional[Tuple[float, float]]:
+    """
+    Best-effort extraction of a (dx,dy) shift (in pixels) from a micrograph XML.
+    Searches for the first ShiftInPixels node with Width/Height children.
+    """
+    if not xml_path or not os.path.isfile(xml_path):
+        return None
+    try:
+        root = ET.parse(xml_path).getroot()
+    except Exception:
+        return None
+
+    for elem in root.iter():
+        if _ln(elem.tag) != "ShiftInPixels":
+            continue
+        dx = dy = None
+        for ch in elem.iter():
+            ln = _ln(ch.tag).lower()
+            if ln == "width":
+                try:
+                    dx = float(ch.text)
+                except Exception:
+                    pass
+            elif ln == "height":
+                try:
+                    dy = float(ch.text)
+                except Exception:
+                    pass
+        if dx is not None and dy is not None:
+            return (dx, dy)
+
+    return None
+
+def _closest_acq_area_index(shift: Tuple[float, float], acq_shifts: List[Tuple[float, float]]) -> Optional[int]:
+    """
+    Given a micrograph shift and the list of acquisition-area shifts from EpuSession.dm,
+    return 1-based index of nearest acquisition area.
+    """
+    if shift is None or not acq_shifts:
+        return None
+    sx, sy = shift
+    best_i = None
+    best_d2 = None
+    for i, (ax, ay) in enumerate(acq_shifts, start=1):
+        d2 = (sx - ax) ** 2 + (sy - ay) ** 2
+        if best_d2 is None or d2 < best_d2:
+            best_d2 = d2
+            best_i = i
+    return best_i
+
 def extract_sample_and_root_from_atlas_path(p: str) -> Optional[Tuple[str, str]]:
     """
     Given a path like ...\\Sample4\\Atlas\\Atlas.dm (or ...\\Sample4\\Atlas),
@@ -513,6 +659,8 @@ def build_session_nodes(session_dir: str, atlas_root: Optional[str]):
 
     gs_index_map = compute_gridsquare_index_map(session_dir, atlas_root)
     gs_dirs = find_gridsquares(session_dir)
+    acq_shifts = _parse_acquisition_area_shifts_from_dm(session_dir)
+    n_acq_areas = len(acq_shifts) if len(acq_shifts) > 0 else 1
     nodes = []
 
     # --- Determine GS1 and cutoff timestamp to avoid showing template definition FoilHole images ---
@@ -578,29 +726,48 @@ def build_session_nodes(session_dir: str, atlas_root: Optional[str]):
         else:
             keys_selected = kept_keys
 
-        # choose micrographs to display according to your new rules
-        micro_map = {k: fh_info[k]["micro_list"] for k in keys_selected}
-        chosen_micro = choose_micrographs_for_display(
-            keys_selected,
-            micro_map,
-            max_total=12,
-            seed_str=f"{session_dir}|{gs_dir}",  # deterministic per gridsquare; add version if you want it to change as data changes
-        )
+        # Cap foil holes to 12, but show ALL micrographs for those selected foil holes
+        keys_selected = keys_selected[:12]
 
         # re-index holes sequentially
         idx_map = {k: i + 1 for i, k in enumerate(keys_selected)}
 
+        def _micro_sort_key(p: str):
+            # Prefer timestamp embedded in filename; fallback to mtime
+            dt = _dt_from_micrograph_filename(os.path.basename(p))
+            if isinstance(dt, datetime):
+                return dt
+            try:
+                return datetime.fromtimestamp(os.path.getmtime(p))
+            except Exception:
+                return datetime.min
+
         children = []
         for k in keys_selected:
             fh_path = fh_info[k]["fh_path"]
-            micro_paths = chosen_micro.get(k, [])
+
+            # ALL micrographs for this foil hole
+            micro_paths_all = [p for p in (fh_info[k]["micro_list"] or []) if os.path.isfile(p)]
+            micro_paths_all.sort(key=_micro_sort_key)  # oldest -> newest
+
+            # Label by acquisition area if multiple; otherwise keep UI unchanged by sending None
+            if n_acq_areas > 1:
+                micro_acq_areas = [((i % n_acq_areas) + 1) for i in range(len(micro_paths_all))]
+            else:
+                micro_acq_areas = [None] * len(micro_paths_all)
+
             children.append({
                 "key": k,
                 "index": idx_map[k],
                 "foilhole_img_path": fh_path if fh_path and os.path.isfile(fh_path) else None,
-                "micrograph_img_paths": [p for p in micro_paths if os.path.isfile(p)],
-                # keep old field for backward compat:
-                "micrograph_img_path": micro_paths[0] if micro_paths else None,
+
+                # Existing fields used by the app:
+                "micrograph_img_paths": micro_paths_all,
+                "micrograph_img_path": micro_paths_all[0] if micro_paths_all else None,
+
+                # NEW fields for UI:
+                "n_acq_areas": n_acq_areas,
+                "micrograph_acq_areas": micro_acq_areas,  # aligns with micrograph_img_paths
             })
 
         nodes.append(
@@ -622,4 +789,3 @@ def build_session_nodes(session_dir: str, atlas_root: Optional[str]):
         pass
 
     return nodes
-

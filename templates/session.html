@@ -33,6 +33,9 @@
     .gs-block { margin-top: 1rem; }
     .gs-image { margin-bottom: 0.5rem; }
 
+    .gs-subimage { margin-top: 0.25rem; }
+    .gs-subimage-title { font-size: 14px; color: #444; margin: 0.25rem 0; }
+
     .fh-grid {
       display: flex;
       flex-wrap: wrap;
@@ -274,6 +277,30 @@
           }
           block.appendChild(gsImageDiv);
 
+          // Optional plasmon image (non-support GS image), only if available
+          if (gs.has_plasmon && gs.plasmon_url) {
+            const plasmonWrap = document.createElement('div');
+            plasmonWrap.className = 'gs-subimage';
+
+            const title = document.createElement('div');
+            title.className = 'gs-subimage-title';
+            title.textContent = 'Energy filter plasmon image (black = empty hole)';
+            plasmonWrap.appendChild(title);
+
+            const pimg = document.createElement('img');
+            pimg.className = 'thumb gs-thumb';
+            pimg.src = `${gs.plasmon_url}?ts=${Date.now()}`;
+            pimg.loading = 'lazy';
+            pimg.alt = `Plasmon GridSquare ${gs.index}`;
+            pimg.onclick = () => openModal(pimg.src);
+
+            // If the plasmon route 404s for any reason, hide everything (so behavior matches "no plasmon")
+            pimg.onerror = () => { plasmonWrap.remove(); };
+
+            plasmonWrap.appendChild(pimg);
+            block.appendChild(plasmonWrap);
+          }
+
           // Foil holes
           if (gs.children && gs.children.length) {
             const fhGrid = document.createElement('div');
@@ -314,8 +341,22 @@
               const microUrls = (ch.micro_urls && ch.micro_urls.length) ? ch.micro_urls
                               : (ch.micro_url ? [ch.micro_url] : []);
 
+              const nAcq = ch.n_acq_areas || 1;
+              const acqList = (ch.micro_acq_areas && ch.micro_acq_areas.length) ? ch.micro_acq_areas : [];
+
               for (let mi = 0; mi < microUrls.length; mi++) {
                 const divImg2 = document.createElement('div');
+
+                // NEW: acquisition area label (only if multiple)
+                if (nAcq > 1) {
+                  const labelDiv = document.createElement('div');
+                  labelDiv.className = 'notes';
+                  const a = acqList[mi];
+                  const areaNum = (a && Number.isFinite(a)) ? a : ((mi % nAcq) + 1);
+                  labelDiv.textContent = `Acquisition Area ${areaNum}`;
+                  divImg2.appendChild(labelDiv);
+                }
+
                 const img2 = document.createElement('img');
                 img2.className = 'thumb';
                 img2.src = microUrls[mi];
@@ -344,5 +385,3 @@
   </script>
 </body>
 </html>
-
-

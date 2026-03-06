@@ -861,6 +861,28 @@ def annotate_foilhole_template(session_dir: str, beam_diameter_stats_m: Optional
     img_rgba.alpha_composite(overlay)
     img = img_rgba.convert("RGB")
 
+    # Label acquisition area rectangles if there are multiple
+    if rect_w_px and rect_h_px and rect_w_px > 0 and rect_h_px > 0 and len(acq_shifts) > 1:
+        draw_txt = ImageDraw.Draw(img)
+        label_font = pil_font(FONT_SIZES["caption"], bold=True)
+        label_color = (0, 128, 0)
+
+        for i, s in enumerate(acq_shifts, start=1):
+            if s is None:
+                continue
+            dx_px, dy_px = s
+            x_center = cx + dx_px * scale_tx
+            y_center = cy + dy_px * scale_ty
+
+            label = str(i)
+            tw, th = measure_text(draw_txt, label, label_font)
+            draw_txt.text(
+                (x_center - tw / 2.0, y_center - th / 2.0),
+                label,
+                fill=label_color,
+                font=label_font,
+            )
+
     # Add 1 µm scale bar using the same helper as other FoilHole images
     img = add_scale_bar_by_xml(img, fh_jpg_path, bar_um=1.0, align="left", font_size=FONT_SIZES["scale_bar"])
     W, H = img.size

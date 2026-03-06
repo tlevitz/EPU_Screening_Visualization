@@ -61,7 +61,7 @@
   </style>
 </head>
 <body>
-  <h1>Select a session under /mnt/z</h1>
+  <h1>Select a session under {{ base_root }} </h1>
 
 
   <div class="controls">
@@ -80,7 +80,7 @@
         </div>
       {% endfor %}
     {% else %}
-      <div class="empty">No sessions found under /mnt/z.</div>
+      <div class="empty">No sessions found under {{ base_root }}.</div>
     {% endif %}
   </div>
 

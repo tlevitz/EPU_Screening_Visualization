@@ -2,6 +2,7 @@
 
 import base64
 import io
+import re
 import os
 import threading
 from collections import OrderedDict
@@ -28,12 +29,19 @@ from session_layout import (
 )
 from epu.annotate_atlas import annotate_atlas_pair
 from epu.annotate_foilhole import annotate_foilhole_template
-from epu.annotate_gridsquare import annotate_gridsquare_image_or_pair, annotate_single_gridsquare_image
+from epu.annotate_gridsquare import annotate_gridsquare_image_or_pair, annotate_single_gridsquare_image, _parse_ts_yyyymmdd_hhmmss, find_latest_gridsquare_support_and_nonsupport
 from epu.report_scale_bars import add_scale_bar_by_xml
 from epu.report_style import FONT_SIZES
 
+# ------------------
+
+### CHANGE THIS IF YOU ARE NOT LOCATED AT /mnt/z ###
+
 BASE_ROOT = "/mnt/z"
 PIXEL_TABLE_PATH = os.path.join(BASE_ROOT, "pixelsizes.txt")
+
+### ----------------
+
 
 app = Flask(__name__)
 
@@ -160,35 +168,107 @@ def build_summary_rows(df_all, instrument_model, mode):
     - Use the same column lists and order.
     - Apply Defocus Values (um) formatting.
     """
+
+    row = df_all.iloc[0].copy()
+    camera_string = str(row.get("Camera", "")).strip()
+
     if mode == "screening":
-        cols = [
-            "Date", "Folder", "Grid Squares Collected", "Total Micrographs",
-            "Average Micrographs per Grid Square",
-            "Microscope", "Acceleration Voltage (kV)", "Extractor Voltage (V)",
-            "Spherical Aberration (mm)", "Gun Lens", "Spot Size", "Intensity",
-            "EPU Version", "C2 Aperture (um)", "Objective Aperture (um)",
-            "Camera", "Image Dimensions (pixels)", "Nominal Magnification",
-            "EPU Pixel Size (A/pix)", "Calibrated Pixel Size (A/pix)",
-            "Beam Size (um)", "Pixel and Beam Size Calibration Date",
-            "Exposure Time (s)", "Approx. Total Dose (e/pix)",
-            "Approx. Total Dose (e/A2)", "Approx. Dose Rate (e/pix/s)",
-            "Grid Type", "Grid Geometry", "EPU Measured Hole Size (um)",
-            "EPU Measured Hole Center-to-Center Distance (um)",
-            "Best Guess Hole Size and Spacing (um)",
-            "Number of Acquisition Areas (Shots Per Hole)",
-            "AFIS", "AFIS Clustering Distance (um)",
-            "Defocus Values (um)",
-        ]
-    else:
-        if instrument_model == "TUNDRA-XXX":
+        if instrument_model and "TUNDRA" in instrument_model.upper() and camera_string == "Ceta-F":
             cols = [
-                "Date", "Folder", "Start Time", "End Time", "Total Time (hrs)",
+                "Date", "Folder", "Atlas Path", "Start Time", "End Time", "Total Time (hrs)",
+                "Grid Squares Screened", "Total Micrographs",
+                "Average Micrographs per Grid Square",
+                "Microscope", "Acceleration Voltage (kV)", "Extractor Voltage (V)",
+                "Spherical Aberration (mm)", "Gun Lens", "Spot Size", "Intensity",
+                "EPU Version", "C2 Aperture (um)", "Objective Aperture (um)",
+                "Camera", "Image Dimensions (pixels)", "Nominal Magnification",
+                "EPU Pixel Size (A/pix)", "Calibrated Pixel Size (A/pix)",
+                "Calibrated Beam Diameter (um)", "Pixel and Beam Size Calibration Date",
+                "Exposure Time (s)", "Approx. Total Dose (e/pix)",
+                "Approx. Total Dose (e/A2)", "Approx. Dose Rate (e/pix/s)",
+                "Grid Type", "Grid Geometry", "EPU Measured Hole Size (um)",
+                "EPU Measured Hole Center-to-Center Distance (um)",
+                "Best Guess Hole Size and Spacing (um)",
+                "Number of Acquisition Areas (Shots Per Hole)",
+                "AFIS", "AFIS Clustering Distance (um)",
+                "Number of Fractions", "Defocus Values (um)",
+            ]
+        elif instrument_model and "TUNDRA" in instrument_model.upper():
+            cols = [
+                "Date", "Folder", "Atlas Path", "Gain Reference File", "Start Time", "End Time", 
+                "Total Time (hrs)", "Grid Squares Screened", "Total Micrographs",
+                "Average Micrographs per Grid Square",
+                "Microscope", "Acceleration Voltage (kV)", "Extractor Voltage (V)",
+                "Spherical Aberration (mm)", "Gun Lens", "Spot Size", "Intensity",
+                "EPU Version", "C2 Aperture (um)", "Objective Aperture (um)",
+                "Camera", "Camera Mode", "Image Dimensions (pixels)", "Nominal Magnification",
+                "EPU Pixel Size (A/pix)", "Calibrated Pixel Size (A/pix)",
+                "Calibrated Beam Diameter (um)", "Pixel and Beam Size Calibration Date",
+                "Exposure Time (s)", "Approx. Total Dose (e/pix)",
+                "Approx. Total Dose (e/A2)", "Approx. Dose Rate (e/pix/s)",
+                "Grid Type", "Grid Geometry", "EPU Measured Hole Size (um)",
+                "EPU Measured Hole Center-to-Center Distance (um)",
+                "Best Guess Hole Size and Spacing (um)",
+                "Number of Acquisition Areas (Shots Per Hole)",
+                "AFIS", "AFIS Clustering Distance (um)",
+                "Number of Fractions", "Defocus Values (um)",
+            ]
+        else:
+            cols = [
+               "Date", "Folder", "Atlas Path", "Start Time", "End Time", "Total Time (hrs)",
+                "Grid Squares Screened", "Total Micrographs",
+                "Average Micrographs per Grid Square", "Gain Reference File",
+                "EPU Version", "Start Time", "End Time", "Total Time (hrs)",
+                "Grid Squares Collected", "Total Movies",
+                "Average Movies per Grid Square", "Movies per Hour",
+                "Stage Tilt (Degrees)", "Microscope",
+                "Acceleration Voltage (kV)", "Extractor Voltage (V)",
+                "Spherical Aberration (mm)", "Gun Lens", "Spot Size",
+                "Beam Diameter (um)", "C2 Aperture (um)", "C3 Aperture (um)",
+                "Objective Aperture (um)", "Energy Filter",
+                "Energy Filter Slit Width (eV)", "Illumination Mode",
+                "Camera", "Camera Mode", "Image Dimensions (pixels)",
+                "Nominal Magnification", "EPU Pixel Size (A/pix)",
+                "Calibrated Pixel Size (A/pix)", "Pixel Size Calibration Date",
+                "Exposure Time (s)", "Approx. Total Dose (e/pix)",
+                "Approx. Total Dose (e/A2)", "Approx. Dose Rate (e/pix/s)",
+                "Grid Type", "Grid Geometry", "EPU Measured Hole Size (um)",
+                "EPU Measured Hole Center-to-Center Distance (um)",
+                "Best Guess Hole Size and Spacing (um)",
+                "Number of Acquisition Areas (Shots Per Hole)",
+                "AFIS", "AFIS Clustering Distance (um)",
+                "Number of Fractions", "Defocus Values (um)",
+            ]
+    else:
+        if instrument_model and "TUNDRA" in instrument_model.upper() and camera_string == "Ceta-F":
+            cols = [
+                "Date", "Folder", "Atlas Path", "Start Time", "End Time", "Total Time (hrs)",
                 "Grid Squares Collected", "Total Movies",
                 "Average Movies per Grid Square", "Movies per Hour",
                 "Microscope", "Acceleration Voltage (kV)", "Extractor Voltage (V)",
                 "Spherical Aberration (mm)", "Gun Lens", "Spot Size", "Intensity",
                 "EPU Version", "C2 Aperture (um)", "Objective Aperture (um)",
                 "Camera", "Image Dimensions (pixels)", "Nominal Magnification",
+                "EPU Pixel Size (A/pix)", "Calibrated Pixel Size (A/pix)",
+                "Beam Size (um)", "Pixel and Beam Size Calibration Date",
+                "Exposure Time (s)", "Approx. Total Dose (e/pix)",
+                "Approx. Total Dose (e/A2)", "Approx. Dose Rate (e/pix/s)",
+                "Grid Type", "Grid Geometry", "EPU Measured Hole Size (um)",
+                "EPU Measured Hole Center-to-Center Distance (um)",
+                "Best Guess Hole Size and Spacing (um)",
+                "Number of Acquisition Areas (Shots Per Hole)",
+                "AFIS", "AFIS Clustering Distance (um)",
+                "Number of Fractions", "Defocus Values (um)",
+            ]
+        elif instrument_model and "TUNDRA" in instrument_model.upper():
+            cols = [
+                "Date", "Folder", "Atlas Path", "Gain Reference File", "Start Time", "End Time", 
+                "Total Time (hrs)", "Grid Squares Collected", "Total Movies",
+                "Average Movies per Grid Square", "Movies per Hour",
+                "Microscope", "Acceleration Voltage (kV)", "Extractor Voltage (V)",
+                "Spherical Aberration (mm)", "Gun Lens", "Spot Size", "Intensity",
+                "EPU Version", "C2 Aperture (um)", "Objective Aperture (um)",
+                "Camera", "Camera Mode", "Image Dimensions (pixels)", "Nominal Magnification",
                 "EPU Pixel Size (A/pix)", "Calibrated Pixel Size (A/pix)",
                 "Beam Size (um)", "Pixel and Beam Size Calibration Date",
                 "Exposure Time (s)", "Approx. Total Dose (e/pix)",
@@ -227,8 +307,6 @@ def build_summary_rows(df_all, instrument_model, mode):
 
     # Keep only columns that actually exist
     cols = [c for c in cols if c in df_all.columns]
-
-    row = df_all.iloc[0].copy()
 
     # Apply Defocus Values (um) formatting if present
     if "Defocus Values (um)" in row.index:
@@ -286,7 +364,7 @@ def get_session_stats_cached(session_dir: str, version: float):
             session_dir, pix_dict, beamsize_dict, caldate_dict
         )
     else:
-        df_all, atlas_path, instrument_model = process_directory_collection(
+        df_all, atlas_path, instrument_model, cam_name = process_directory_collection(
             session_dir, pix_dict, beamsize_dict, caldate_dict
         )
 
@@ -323,7 +401,7 @@ def get_session_nodes(session_dir: str):
 @app.route("/")
 def index():
     sessions = find_sessions()
-    return render_template("index.html", sessions=sessions)
+    return render_template("index.html", sessions=sessions, base_root=BASE_ROOT)
 
 @app.route("/session/<session_id>/summary.json")
 def session_summary_json(session_id):
@@ -342,22 +420,22 @@ def session_summary_json(session_id):
         notes = [
             "These statistics are for the first image taken in the screening set. "
             "If you took images at different microscope settings, this will not be correct for all images.",
-            "Please contact Talya if any of these numbers appear to be incorrect! The script may need updating.",
-            "The dose is approximated from the first micrograph. The total dose on specimen is slightly higher."
+            "The dose is approximated from the first micrograph. The total dose on specimen is slightly higher.",
             "The hole size and spacing is guessed based on the measure hole size function in EPU. "
             "If you are using an uncommon hole size/spacing, it may misidentify it.",
             "Pixel size is listed both as the pixel size automatically coded in EPU as well as the experimentally-calibrated pixel size. "
             "I advise that you use the calibrated pixel size in processing.",
+            "Please contact Talya if any of these numbers appear to be incorrect! The script may need updating.",
         ]
     else:
         notes = [
-            "Please contact Talya if any of these numbers appear to be incorrect! The script may need updating.",
-            "The dose is approximated from the first movie. The total dose on specimen is slightly higher; "
-            "however, if you did not record the dose when setting up collection, this will be appropriate for most (if not all) processing.",
+            "If you took images at different microscope settings, this will not be correct for all images.",
+            "The dose is approximated from the first movie. The total dose on specimen is slightly higher.",
             "The hole size and spacing is guessed based on the measure hole size function in EPU. "
             "If you are using an uncommon hole size/spacing, it may misidentify it.",
             "Pixel size is listed both as the pixel size automatically coded in EPU as well as the experimentally-calibrated pixel size. "
             "I advise that you use the calibrated pixel size in processing.",
+            "Please contact Talya if any of these numbers appear to be incorrect! The script may need updating.",
         ]
 
     return jsonify({
@@ -381,6 +459,26 @@ def session_nodes_json(session_id):
     out_nodes = []
     for gs in nodes:
         gs_index = gs.get("index")
+
+        # Plasmon availability + URL
+        has_plasmon = False
+        plasmon_url = None
+        try:
+            gs_dir = gs.get("gs_dir")
+            if gs_dir and gs_index:
+                support_path, nonsupport_path = find_latest_gridsquare_support_and_nonsupport(gs_dir)
+                main_base = support_path or nonsupport_path
+                if nonsupport_path and os.path.isfile(nonsupport_path):
+                    if not (main_base and os.path.isfile(main_base) and os.path.realpath(nonsupport_path) == os.path.realpath(main_base)):
+                        has_plasmon = True
+                        plasmon_url = url_for(
+                            "session_gridsquare_plasmon",
+                            session_id=session_id,
+                            gs_index=gs_index,
+                        )
+        except Exception:
+            pass
+
         children = []
         for ch in gs["children"]:
             ch_index = ch.get("index")
@@ -392,6 +490,9 @@ def session_nodes_json(session_id):
 
             paths = ch.get("micrograph_img_paths") or []
             has_mg = bool(paths) or bool(ch.get("micrograph_img_path"))
+
+            acq_areas = ch.get("micrograph_acq_areas") or []
+            n_acq_areas = ch.get("n_acq_areas")
 
             if has_fh and gs_index and ch_index:
                 foilhole_url = url_for(
@@ -420,12 +521,16 @@ def session_nodes_json(session_id):
                 "foilhole_url": foilhole_url,
                 "micro_urls": micro_urls,
                 "micro_url": micro_url,
+                "n_acq_areas": n_acq_areas,
+                "micro_acq_areas": acq_areas,
             })
 
         out_nodes.append({
             "index": gs_index, 
             "name": gs.get("name"),
             "epu": gs.get("epu"), 
+            "has_plasmon": has_plasmon,
+            "plasmon_url": plasmon_url,
             "children": children,
         }) 
 
@@ -442,9 +547,8 @@ def session_view(session_id):
     if not os.path.isdir(session_dir):
         abort(404)
 
-    base_root = "/mnt/z"
-    if session_dir.startswith(base_root + os.sep):
-        display_name = session_dir[len(base_root) + 1:]
+    if session_dir.startswith(BASE_ROOT + os.sep):
+        display_name = session_dir[len(BASE_ROOT) + 1:]
     else:
         display_name = os.path.basename(session_dir)
     refresh = request.args.get("refresh") == "1"
@@ -658,6 +762,52 @@ def session_gridsquare(session_id, gs_index):
         abort(404)
     return send_file(io.BytesIO(data), mimetype="image/jpeg")
 
+@app.route("/session/<session_id>/gridsquare/<int:gs_index>/plasmon")
+def session_gridsquare_plasmon(session_id, gs_index):
+    try:
+        session_dir = decode_path(session_id)
+    except ValueError:
+        abort(404)
+    if not os.path.isdir(session_dir):
+        abort(404)
+
+    nodes, _, _ = get_session_nodes(session_dir)
+    node = next((n for n in nodes if n.get("index") == gs_index), None)
+    if node is None:
+        abort(404)
+
+    gs_dir = node["gs_dir"]
+    support_path, nonsupport_path = find_latest_gridsquare_support_and_nonsupport(gs_dir)
+
+    # Plasmon = non-support, but only show it if it differs from the main base (support if present)
+    main_base = support_path or nonsupport_path
+    if not nonsupport_path or not os.path.isfile(nonsupport_path):
+        abort(404)
+    if main_base and os.path.isfile(main_base):
+        try:
+            if os.path.realpath(nonsupport_path) == os.path.realpath(main_base):
+                abort(404)
+        except Exception:
+            pass
+
+    version = get_session_version(session_dir)
+    cache_key = ("gs_plasmon", session_dir, version, gs_index)
+
+    def generate():
+        img = Image.open(nonsupport_path).convert("RGB")
+        # Reuse the caption helper you already have in epu.annotate_gridsquare
+        try:
+            from epu.annotate_gridsquare import add_plasmon_caption
+            img = add_plasmon_caption(img, "Energy filter plasmon image: black = empty hole")
+        except Exception:
+            pass
+        return img
+
+    data = get_cached_image_bytes(cache_key, generate, fmt="JPEG")
+    if data is None:
+        abort(404)
+    return send_file(io.BytesIO(data), mimetype="image/jpeg")
+
 @app.route("/session/<session_id>/foilhole/<int:gs_index>/<int:child_index>/hole")
 def session_foilhole_hole(session_id, gs_index, child_index):
     try:
@@ -731,5 +881,3 @@ def session_foilhole_micro_index(session_id, gs_index, child_index, micro_index)
 
 if __name__ == "__main__":
     app.run(debug=True)
-
-

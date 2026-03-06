@@ -636,6 +636,46 @@ def find_latest_gridsquare_files(gs_dir):
 
     return os.path.join(gs_dir, latest_jpg), os.path.join(gs_dir, xml_name), ts_str
 
+def _parse_ts_yyyymmdd_hhmmss(ts: str):
+    try:
+        return datetime.strptime(ts, "%Y%m%d_%H%M%S")
+    except Exception:
+        return None
+
+def find_latest_gridsquare_support_and_nonsupport(gs_dir: str):
+    """
+    Returns (support_path, nonsupport_path).
+    Each may be None if not found.
+    """
+    support = []
+    nonsupport = []
+
+    try:
+        for name in os.listdir(gs_dir):
+            m = GS_SUPPORT_IMG_RE.match(name)
+            if m:
+                dt = _parse_ts_yyyymmdd_hhmmss(m.group(1))
+                full = os.path.join(gs_dir, name)
+                support.append((dt, os.path.getmtime(full), full))
+                continue
+
+            m = GS_IMG_RE.match(name)
+            if m:
+                dt = _parse_ts_yyyymmdd_hhmmss(m.group(1))
+                full = os.path.join(gs_dir, name)
+                nonsupport.append((dt, os.path.getmtime(full), full))
+    except Exception:
+        return None, None
+
+    def pick_latest(lst):
+        if not lst:
+            return None
+        # Prefer parsed timestamp; fallback to mtime
+        lst.sort(key=lambda t: (t[0] is not None, t[0] or datetime.min, t[1]), reverse=True)
+        return lst[0][2]
+
+    return pick_latest(support), pick_latest(nonsupport)
+
 def find_latest_gridsquare_jpg_relaxed(gs_dir):
     jpgs = []
     for fname in os.listdir(gs_dir):
@@ -1202,3 +1242,5 @@ def annotate_gridsquare_image_or_pair(gs_dir, min_ts: datetime | None = None):
     left_gs = annotate_gridsquare_left(gs_dir, min_ts=min_ts)
     right_gs = annotate_gridsquare_right(gs_dir)  # right panel is "collection-only"; usually fine unfiltered
     return compile_gridsquare_images(gs_dir, left_gs, right_gs)
+
+
