@@ -1,1 +1,0 @@
-# Required packages: python3.9, reportlab, Flask, pandas, numpy, Pillow
