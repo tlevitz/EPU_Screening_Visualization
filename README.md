@@ -59,7 +59,7 @@ sudo mount -t drvfs Z: /mnt/z
    in the terminal while standing in the base directory of an imaging session. This is only used to "clean up"
    the atlas path displayed in the summary table.
    
-7. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root. There is an example file provided here that you can modify. You can omit the beam size column for 3-condenser systems.
+7. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root (where your EPU sessions are written, NOT where the script is located). There is an example file provided here that you can modify. You can omit the beam size column for 3-condenser systems.
 
 8. If your microscope writes out .tiff files, or if you have a Ceta-F that writes out .mrc files, you do
    not need to change anything. Otherwise, you will have to modify this segment of epu/epustats.py to include
