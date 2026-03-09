@@ -395,8 +395,6 @@ def parse_micrograph_xml(file_path, pix_dict, beamsize_dict, caldate_dict):
     # Camera mode (Counting/Linear) from camera info
     counted_key = f"Detectors[{cam_TF_name}].ElectronCounted"
     electron_counted = parse_custom_value(root, counted_key)
-    print(f"Detectors[{cam_TF_name}].ElectronCounted")
-    print(f"ELECTRON COUNTED IS {electron_counted}")
     if electron_counted is not None:
         if electron_counted.lower() == "true":
             values["Camera Mode"] = "Counting"
