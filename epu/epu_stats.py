@@ -275,8 +275,21 @@ def parse_micrograph_xml(file_path, pix_dict, beamsize_dict, caldate_dict):
     if instrument_model is None:
         print(f"Warning: InstrumentModel not found in {file_path}")
     microscope_name, cs = MICROSCOPE_INFO.get(instrument_model, ("unknown", "unknown"))
-    values["Microscope"] = microscope_name
-    values["Spherical Aberration (mm)"] = cs
+    if microscope_name != "unknown":
+        values["Microscope"] = microscope_name
+        values["Spherical Aberration (mm)"] = cs
+    else:
+        values["Microscope"] = instrument_model
+        if instrument_model and "TITAN" in instrument_model.upper():
+            values["Spherical Aberration (mm)"] = 2.7
+        elif instrument_model and "TALOS" in instrument_model.upper():
+            values["Spherical Aberration (mm)"] = 2.7
+        elif instrument_model and "ARCTICA" in instrument_model.upper():
+            values["Spherical Aberration (mm)"] = 2.7
+        elif instrument_model and "GLACIOS" in instrument_model.upper():
+            values["Spherical Aberration (mm)"] = 2.7
+        elif instrument_model and "TUNDRA" in instrument_model.upper():
+            values["Spherical Aberration (mm)"] = 1.6
 
     # EPU version
     epu_ver = root.findtext(".//fh:microscopeData/fh:core/fh:ApplicationSoftwareVersion", namespaces=ns) \
