@@ -1,0 +1,9 @@
+name: screening_vis
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - flask
+  - pandas
+  - conda-forge::matplotlib
+  - reportlab
