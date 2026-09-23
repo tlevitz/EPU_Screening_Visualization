@@ -14,22 +14,27 @@ sudo mount -t drvfs Z: /mnt/z
 
 # Getting Started
 
-3. Generate a conda environment appropriate for the screening visualization
+3. Grab the most recent version of the script
    ```bash
-   conda create --name screening_vis python=3.9 reportlab Flask pandas numpy Pillow
+   git clone https://github.com/tlevitz/EPU_Screening_Visualization.git /path/to/destination
    ```
-4. Activate the conda environment
+   
+4. Generate a conda environment appropriate for the screening visualization from the screening_vis.yml file
+   ```bash
+   conda env create -f screening_vis.yml
+   ```
+5. Activate the conda environment
    ```bash
    conda activate screening_vis
    ```
-5. Modify this section of app.py if you have the drive mounted in a different location or if you have pixel sizes located somewhere other than in the base directory (see step 7 for more on this)
+6. Modify this section of app.py if you have the drive mounted in a different location or if you have pixel sizes located somewhere other than in the base directory (see step 7 for more on this)
    
    ```python
    BASE_ROOT = "/mnt/z"
    PIXEL_TABLE_PATH = os.path.join(BASE_ROOT, "pixelsizes.txt")
    ```
    
-6. Modify this section of epu/epustats.py with your microscope information
+7. Modify this section of epu/epustats.py with your microscope information
 
    ```python
    MICROSCOPE_INFO = {
@@ -59,9 +64,9 @@ sudo mount -t drvfs Z: /mnt/z
    in the terminal while standing in the base directory of an imaging session. This is only used to "clean up"
    the atlas path displayed in the summary table.
    
-7. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root (where your EPU sessions are written, NOT where the script is located). There is an example file provided here that you can modify. You can omit the beam size column for 3-condenser systems.
+8. The code assumes that you have a pixel size table named pixelsizes.txt located at the location of the base root (where your EPU sessions are written, NOT where the script is located). There is an example file provided here that you can modify. You can omit the beam size column for 3-condenser systems.
 
-8. If your microscope writes out .tiff files, or if you have a Ceta-F that writes out .mrc files, you do
+9. If your microscope writes out .tiff files, or if you have a Ceta-F that writes out .mrc files, you do
    not need to change anything. Otherwise, you will have to modify this segment of epu/epustats.py to include
    your file extension(s). 
    ```python
